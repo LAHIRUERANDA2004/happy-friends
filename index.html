@@ -10,7 +10,7 @@
 <!-- WELCOME PAGE -->
 <section id="welcome">
   <header class="top">
-    <div class="logo"><img src="logo.svg" width="36" height="36" alt="Happy Friends logo"><span>Happy Friends</span></div>
+    <a class="logo" href="index.html" aria-label="Happy Friends home"><img src="logo.svg?v=2" width="42" height="42" alt="" onerror="this.style.display='none'"><span class="brand-word"><span>Happy</span><b>Friends</b></span></a>
     <div class="row">
       <a class="btn ghost" href="freesites.html">Free Websites</a><button class="icon" id="themeBtn" title="Change theme">🌙</button>
       <button class="btn ghost" data-login>Log in</button>
@@ -29,7 +29,7 @@
 <section id="app" hidden>
   <header class="top">
     <button class="icon" id="usersBtn" title="Online users">👥</button>
-    <div class="logo sm"><img src="logo.svg" width="28" height="28" alt="Happy Friends logo"><span>Happy Friends</span></div>
+    <a class="logo sm" href="index.html" aria-label="Happy Friends home"><img src="logo.svg?v=2" width="34" height="34" alt="" onerror="this.style.display='none'"><span class="brand-word"><span>Happy</span><b>Friends</b></span></a>
     <div class="row">
       <a class="btn ghost sm" href="freesites.html">Free Websites</a><button class="btn vip-btn sm" id="vipBtn">⭐ Get VIP</button>
       <button class="coin" id="coinBtn">🪙 <b id="coins">0</b></button>
@@ -58,6 +58,12 @@
   </div>
   <nav class="bottom"><button id="tProfile">👤 Profile</button><button id="tStory">➕ Story</button><button id="tReward">🎁 Rewards</button><button id="tOut">🚪 Log out</button></nav>
 </section>
+
+
+<footer id="siteFooter" class="site-footer">
+  <div class="footer-brand"><a class="logo footer-logo" href="index.html"><img src="logo.svg?v=2" width="54" height="54" alt=""><span class="brand-word"><span>Happy</span><b>Friends</b></span></a><small>© <span id="footerYear"></span> Happy Friends</small></div>
+  <div class="footer-right"><p>Meet new people, make friends and stay connected with Happy Friends.</p><nav id="socialLinks" class="social-links" aria-label="Social media"></nav></div>
+</footer>
 
 <!-- MODAL (shared) -->
 <div id="modal" hidden><div class="card" id="modalBody"></div></div>
