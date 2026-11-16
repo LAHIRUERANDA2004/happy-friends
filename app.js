@@ -40,6 +40,25 @@ function avatar(u){
 }
 function nameHtml(u){return '<span class="nm '+gcls(u&&u.gender)+'">'+esc(u&&u.name||'Member')+'</span>'+gsym(u&&u.gender)+(u&&u.isBot&&BOT_CONFIG.labelAsBot?' <span class="bot-tag">bot</span>':'')}
 const today=()=>new Date().toISOString().slice(0,10);
+const isVip=u=>!!u&&(u.vipUntil||0)>Date.now();
+/* avatar with optional animated gold VIP ring */
+const avHtml=(u,cls,attrs)=>'<span class="avw'+(isVip(u)?' vip-ring':'')+'"><img class="'+(cls||'')+'" src="'+esc(avatar(u))+'" '+(attrs||'')+' alt=""></span>';
+/* WhatsApp-style ticks */
+const CHK='<path d="M1 5.8l3.4 3.4L11 1.6"/>',CHK2='<path d="M5.6 8.4l.8.8L15 1.6"/>';
+const TK={wait:'<span class="tk wait" title="Sending">🕓</span>',
+  sent:'<svg class="tk" viewBox="0 0 16 11" title="Sent">'+CHK+'</svg>',
+  deliv:'<svg class="tk" viewBox="0 0 16 11" title="Delivered">'+CHK+CHK2+'</svg>',
+  read:'<svg class="tk read" viewBox="0 0 16 11" title="Seen">'+CHK+CHK2+'</svg>'};
+const ackSent=new Set();
+/* mark messages addressed to me as delivered / read (recipient only; allowed by firestore.rules) */
+function ack(docs,field){
+  if(!me)return;
+  const todo=docs.filter(d=>{const m=d.data();return m.to===me.uid&&!m[field]&&!d.metadata.hasPendingWrites&&!ackSent.has(field+d.id)}).slice(0,100);
+  if(!todo.length)return;
+  const b=db.batch();
+  todo.forEach(d=>{ackSent.add(field+d.id);const u=field==='readAt'?{readAt:TS()}:{deliveredAt:TS()};if(field==='readAt'&&!d.data().deliveredAt)u.deliveredAt=TS();b.update(d.ref,u)});
+  b.commit().catch(e=>{console.warn('Receipt update skipped:',e.code||e.message);todo.forEach(d=>ackSent.delete(field+d.id))});
+}
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const stampOf=m=>Number(m.createdAt)||(m.ts&&m.ts.toMillis&&m.ts.toMillis())||0;
 
@@ -163,6 +182,7 @@ function startSession(){
     if(!d.exists){hideLoader();if(!onboarding)onboard(!!me.isAnonymous);return}
     my=d.data();
     if(my.suspended){alert('Your account is suspended.');auth.signOut();return}
+    if(onboarding){onboarding=false;guestAuth=null;closeModal()}   // profile exists now -> sign-up form is done
     if(!appStarted){appStarted=true;begin()}
     paintProfile();
   },err=>{
@@ -178,7 +198,7 @@ function teardown(){
   if(typingUnsub){typingUnsub();typingUnsub=null}
   welcomeTimers.forEach(clearTimeout);welcomeTimers=[];
   appStarted=false;onboarding=false;migrated=false;users={};realDocs=[];botMsgs=[];botChats={};inboxIncoming=[];inboxOutgoing=[];incomingReady=false;unreadByRoom={};welcomed=false;rosterKey='';
-  remoteTypers.clear();botTypers.clear();nodes.clear();
+  remoteTypers.clear();botTypers.clear();nodes.clear();ackSent.clear();
   const m=$('msgs');if(m)m.innerHTML='';
 }
 
@@ -211,7 +231,11 @@ function onboard(guest){
       batch.set(db.collection('users').doc(u.uid),data);
       if(!guest&&u.email)batch.set(db.collection('userPrivate').doc(u.uid),{email:u.email,updatedAt:TS()});   // email kept private (not in the public users list)
       await batch.commit();
-      onboarding=false;guestAuth=null;closeModal();showLoader('Starting chat…');
+      // FIX: the profile snapshot may already have started the app (local write) before commit() resolves.
+      // Only close the sign-up form if it is still open, and never show the loader after the app has started.
+      if(onboarding){onboarding=false;guestAuth=null;closeModal()}
+      if(appStarted)hideLoader();
+      else{showLoader('Starting chat…');setTimeout(()=>{if(appStarted)hideLoader()},5000)}
     }catch(err){console.error(err);toast('Could not save your profile: '+(err.code||err.message));setBusy(btn,false)}
   };
 }
@@ -225,7 +249,7 @@ function cancelOnboard(){
    ===================================================================== */
 function paintProfile(){
   $('coins').textContent=my.coins||0;
-  $('meImg').src=avatar(my);
+  $('meImg').src=avatar(my);$('meWrap').classList.toggle('vip-ring',isVip(my));
   $('msgs').style.backgroundImage=my.wallpaper&&WALLS[my.wallpaper]?WALLS[my.wallpaper]:'none';
   const vip=(my.vipUntil||0)>Date.now();
   $('vipBtn').textContent=vip?'⭐ VIP active':'⭐ Get VIP';$('vipBtn').classList.toggle('vip-active',vip);
@@ -241,7 +265,7 @@ function begin(){
   unsubs.push(db.collection('users').orderBy('lastSeen','desc').limit(200).onSnapshot(s=>{users={};s.forEach(d=>users[d.id]=d.data());renderUsers();renderInbox();paintRoomHead()},listenErr('Users')));
   // private inbox: every message sent to me / by me (room = sorted UID pair)
   unsubs.push(db.collection('messages').where('to','==',me.uid).onSnapshot(s=>{
-    inboxIncoming=s.docs;
+    inboxIncoming=s.docs;ack(s.docs,'deliveredAt');
     if(incomingReady)s.docChanges().forEach(c=>{
       if(c.type!=='added')return;const m=c.doc.data();
       if(stampOf(m)<=start-5000||c.doc.metadata.hasPendingWrites)return;
@@ -286,7 +310,7 @@ function renderUsers(){
   const h=$('onlineCount');if(h)h.textContent=online+' online';
   $('users').innerHTML=l.map(({id,u,s,bot})=>{
     const unread=bot?0:(unreadByRoom[dmId(id)]||0);
-    return `<div class="u ${gcls(u.gender)}" ${bot?'data-bot':'data-u'}="${esc(id)}"><img class="ring ${gcls(u.gender)}" src="${esc(avatar(u))}" alt=""><div><b>${nameHtml(u)} ${(u.vipUntil||0)>Date.now()?'<span class="vip-badge">VIP</span>':''}</b><small>${esc(u.location||'')}${u.location&&u.looking?' · ':''}${esc(u.looking||'')}</small></div>${unread?`<span class="badge">${unread>99?'99+':unread}</span>`:''}<i class="dot ${s}"></i></div>`;
+    return `<div class="u ${gcls(u.gender)}" ${bot?'data-bot':'data-u'}="${esc(id)}">${avHtml(u,'ring '+gcls(u.gender))}<div><b>${nameHtml(u)} ${(u.vipUntil||0)>Date.now()?'<span class="vip-badge">VIP</span>':''}</b><small>${esc(u.location||'')}${u.location&&u.looking?' · ':''}${esc(u.looking||'')}</small></div>${unread?`<span class="badge">${unread>99?'99+':unread}</span>`:''}<i class="dot ${s}"></i></div>`;
   }).join('')||'<small>No users yet</small>';
 }
 $('users').onclick=e=>{
@@ -308,7 +332,7 @@ function markRead(r){
   if((lastRead[r]||0)>=latest&&!unreadByRoom[r])return;
   lastRead[r]=latest;saveRead();renderInbox();renderUsers();
 }
-function markReadCurrent(){if(roomKind==='dm'&&!document.hidden)markRead(room)}
+function markReadCurrent(){if(roomKind==='dm'&&!document.hidden){markRead(room);ack(realDocs,'readAt')}}
 function renderInbox(){
   if(!me)return;
   const grouped=new Map();unreadByRoom={};let total=0;
@@ -406,10 +430,10 @@ function openRoom(o){
 function buildItems(){
   const items=[];
   if(roomKind==='bot'){
-    (botChats[botPeer.id]||[]).forEach(x=>items.push({key:x.id,mine:x.mine,ms:x.ms,text:x.text,img:x.img,name:botPeer.name,gender:botPeer.gender,bot:true,pending:false}));
+    (botChats[botPeer.id]||[]).forEach(x=>items.push({key:x.id,mine:x.mine,ms:x.ms,text:x.text,img:x.img,name:botPeer.name,gender:botPeer.gender,bot:true,pending:false,tick:x.mine?'read':''}));
   }else{
     realDocs.forEach(d=>{const m=d.data(),mine=m.from===me.uid,sender=users[m.from];
-      items.push({key:d.id,mine,ms:stampOf(m)||Date.now(),text:m.text,img:m.img,name:m.name,gender:(sender&&sender.gender)||m.gender,story:m.storyReply,pending:d.metadata.hasPendingWrites})});
+      items.push({key:d.id,mine,ms:stampOf(m)||Date.now(),text:m.text,img:m.img,name:m.name,gender:(sender&&sender.gender)||m.gender,story:m.storyReply,pending:d.metadata.hasPendingWrites,tick:mine&&m.isPrivate?(d.metadata.hasPendingWrites?'wait':m.readAt?'read':m.deliveredAt?'deliv':'sent'):''})});
     if(roomKind==='room')botMsgs.forEach(e=>items.push({key:e.id,mine:false,ms:e.at,text:e.text,name:e.bot.name,gender:e.bot.gender,bot:true,pending:false}));
   }
   return items.sort((a,b)=>a.ms-b.ms);
@@ -420,7 +444,8 @@ function msgHtml(it){
   const img=safeImg(it.img);
   return head+story+(it.text?`<span class="mt">${esc(it.text)}</span>`:'')+(img?`<img loading="lazy" alt="photo" src="${esc(img)}">`:'')+'<time></time>';
 }
-function timeText(it){return new Date(it.ms).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+(it.pending?' · sending…':'')}
+function timeText(it){return new Date(it.ms).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+(it.pending&&!it.tick?' · sending…':'')}
+function timeHtml(it){return esc(timeText(it))+(it.tick?TK[it.tick]:'')}
 function renderMessages(forceScroll){
   const box=$('msgs');if(!box)return;
   const wasNear=box.scrollHeight-box.scrollTop-box.clientHeight<140,prevTop=box.scrollTop;
@@ -428,7 +453,7 @@ function renderMessages(forceScroll){
   items.forEach(it=>{
     seen.add(it.key);let el=nodes.get(it.key);
     if(!el){el=document.createElement('div');el.className='m'+(it.mine?' me':'');el.dataset.id=it.key;el.innerHTML=msgHtml(it);nodes.set(it.key,el);if(!it.mine)addedOthers++}
-    el.querySelector('time').textContent=timeText(it);
+    el.querySelector('time').innerHTML=timeHtml(it);
     const expected=prev?prev.nextSibling:box.firstChild;
     if(expected!==el)box.insertBefore(el,expected);
     prev=el;
@@ -618,7 +643,7 @@ $('tStory').onclick=()=>{
 $('tProfile').onclick=$('meImg').onclick=()=>{
   if(!my)return toast('Your profile is still loading');
   const guest=my.accountType==='guest';
-  modal(`<h2>My profile</h2><img class="av" id="pv" src="${esc(avatar(my))}" style="width:80px;height:80px" alt="">
+  modal(`<h2>My profile</h2><span class="avw${isVip(my)?' vip-ring':''}"><img class="av" id="pv" src="${esc(avatar(my))}" style="width:80px;height:80px" alt=""></span>
   <p style="margin-top:6px">${nameHtml(my)} · ${esc(my.age||'')}</p>
   ${guest?'<p style="color:var(--mut);font-size:13px">Register with Google to upload a profile picture and unlock stories and chat wallpapers.</p>':'<label>Change picture</label><input type="file" id="pf" accept="image/*">'}
   <label>Name</label><input id="pn" maxlength="24" value="${esc(my.name)}"><label>Location</label><input id="pl" value="${esc(my.location)}" placeholder="e.g. Kandy, Sri Lanka" maxlength="40">
