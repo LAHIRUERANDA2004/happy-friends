@@ -92,3 +92,20 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 @media(max-width:600px){.top .btn.sm{font-size:11px;padding:6px 8px}.top .row{gap:4px}}
 
 .logo img{display:block;object-fit:contain;flex:none}.story-viewers{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:12px;color:var(--ink)}.story-viewers summary{cursor:pointer;font-weight:800;margin-bottom:6px}.story-viewers div{padding:5px 0;border-top:1px solid var(--line);font-size:13px}
+
+.story-reply-form{display:flex;gap:8px;align-items:center;margin-top:14px}.story-reply-form input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:11px 14px;font-size:15px}.card .story-reply-form .btn{width:auto;flex:none;margin:0;padding:10px 16px}.story-reply-context{display:flex;flex-direction:column;gap:3px;padding:7px 10px;margin:3px 0 7px;border-left:3px solid var(--pri);border-radius:7px;background:rgba(108,92,231,.09);font-size:12px}.story-reply-context span{color:var(--mut);font-style:italic}
+
+/* Footer / visible wordmark */
+.logo{ text-decoration:none; color:var(--ink); gap:10px; flex:none; }
+.logo img{width:42px;height:42px;display:block;object-fit:contain}
+.brand-word{display:inline-flex;align-items:baseline;gap:0;font-size:clamp(20px,3vw,27px);font-weight:800;letter-spacing:-1px;color:var(--ink);white-space:nowrap}
+.brand-word b{color:var(--pri);font-weight:900}
+.logo.sm .brand-word{font-size:18px}
+.site-footer{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:28px clamp(18px,4vw,56px);background:#17131f;color:#c8bfdc;border-top:1px solid rgba(255,255,255,.08);min-height:150px}
+.footer-brand{display:flex;flex-direction:column;gap:10px}.footer-logo .brand-word{font-size:28px;color:#f5efff}.footer-brand small{font-size:13px;color:#b6abc9}
+.footer-right{max-width:440px;text-align:right}.footer-right p{line-height:1.6;color:#c8bfdc;font-size:14px;margin-bottom:12px}
+.social-links{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.social-link{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:38px;min-height:38px;padding:7px 12px;border-radius:99px;background:#d9d0ee;color:#21192d;text-decoration:none;font-weight:800;transition:transform .15s,background .15s}
+.social-link:hover{transform:translateY(-2px);background:#fff}.social-link span{font-size:17px}.social-link small{font-size:12px}
+.btn.danger{background:#d93655;color:white}
+@media(max-width:620px){.site-footer{align-items:flex-start;flex-direction:column;gap:20px;padding:24px 18px}.footer-right{text-align:left;width:100%}.social-links{justify-content:flex-start}.footer-logo .brand-word{font-size:24px}}
