@@ -228,3 +228,19 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 
 /* never let the reduced-motion rule freeze the loading spinners */
 @media(prefers-reduced-motion:reduce){.spin,.btn.loading::after{animation:spin 1.4s linear infinite!important}.dots i{animation:blink 1.6s infinite both!important}}
+
+/* ===== v3: VIP gold ring + message ticks ===== */
+.avw{position:relative;display:inline-flex;flex:none;border-radius:50%;line-height:0}
+.avw>img{position:relative;z-index:1}
+.vip-ring::before{content:"";position:absolute;inset:-4px;border-radius:50%;z-index:0;
+  background:conic-gradient(from 0deg,#fff4b8,#ffc400,#b8860b,#ffe27a,#ffb800,#fff4b8);
+  animation:vipSpin 2.6s linear infinite}
+.vip-ring::after{content:"";position:absolute;inset:-4px;border-radius:50%;z-index:0;pointer-events:none;
+  box-shadow:0 0 10px 2px rgba(255,196,0,.65);animation:vipGlow 1.8s ease-in-out infinite}
+.vip-ring>img{box-shadow:0 0 0 2px var(--card)}
+@keyframes vipSpin{to{transform:rotate(360deg)}}
+@keyframes vipGlow{50%{box-shadow:0 0 16px 4px rgba(255,214,64,.95)}}
+.m time{display:flex;justify-content:flex-end;align-items:center;gap:4px}
+.tk{width:16px;height:11px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:.75}
+.tk.read{stroke:#34b7f1;opacity:1}
+.tk.wait{font-size:9px;width:auto;height:auto;opacity:.8}
