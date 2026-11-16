@@ -109,3 +109,9 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .social-link:hover{transform:translateY(-2px);background:#fff}.social-link span{font-size:17px}.social-link small{font-size:12px}
 .btn.danger{background:#d93655;color:white}
 @media(max-width:620px){.site-footer{align-items:flex-start;flex-direction:column;gap:20px;padding:24px 18px}.footer-right{text-align:left;width:100%}.social-links{justify-content:flex-start}.footer-logo .brand-word{font-size:24px}}
+
+/* Separate private conversation list */
+.dm-inbox{display:flex;flex-direction:column;gap:6px;margin:8px 0 16px}
+.dm-inbox-item{display:flex;flex-direction:column;gap:3px;width:100%;padding:10px 12px;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);cursor:pointer}
+.dm-inbox-item:hover,.dm-inbox-item.active{border-color:var(--accent);background:var(--mine)}
+.dm-inbox-item b{font-size:13px}.dm-inbox-item small,.inbox-empty{font-size:11px;color:var(--mut);overflow-wrap:anywhere}
