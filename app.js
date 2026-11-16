@@ -29,6 +29,15 @@ const today=()=>new Date().toISOString().slice(0,10);
 function status(u){const t=u.lastSeen?.toMillis?.()||0;if(Date.now()-t>90000)return'off';return u.away?'away':'on'}
 const dmId=uid=>[me.uid,uid].sort().join('_');
 
+/* Footer social links are managed from the admin panel. */
+function renderSocialLinks(data){
+  const box=$('socialLinks');if(!box)return;
+  const links=Array.isArray(data?.links)?data.links:[];
+  box.innerHTML=links.filter(x=>x&&x.url&&x.name).map(x=>`<a class="social-link" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(x.name)}" title="${esc(x.name)}"><span>${esc(x.icon||'↗')}</span><small>${esc(x.name)}</small></a>`).join('');
+}
+$('footerYear').textContent=new Date().getFullYear();
+db.collection('siteSettings').doc('socialLinks').onSnapshot(s=>renderSocialLinks(s.exists?s.data():{}),e=>console.warn('Social links unavailable:',e));
+
 /* auth */
 document.querySelectorAll('[data-login]').forEach(b=>b.onclick=()=>auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>toast(e.message)));
 $('guestJoin').onclick=()=>auth.signInAnonymously().catch(e=>toast('Guest sign-in failed: '+e.message));
@@ -85,7 +94,7 @@ function begin(){
     document.querySelectorAll('[data-r]').forEach(e=>e.onclick=()=>{openRoom(e.dataset.r,e.textContent);$('side').classList.remove('open')})});
   db.collection('stories').where('exp','>',Date.now()).onSnapshot(s=>{const l=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.exp-a.exp);
     $('stories').innerHTML=l.length?l.map((x,i)=>`<div class="st" data-i="${i}"><img loading="lazy" src="${x.photo||''}"><span>${esc(x.name)}</span></div>`).join(''):'<small style="color:var(--mut)">No stories yet. Post one!</small>';
-    document.querySelectorAll('.st').forEach(e=>e.onclick=async()=>{const x=l[e.dataset.i];try{if(me.uid!==x.uid)await db.collection('stories').doc(x.id).collection('views').doc(me.uid).set({uid:me.uid,name:my?.name||'Member',photo:my?.photo||'',viewedAt:TS()},{merge:true})}catch(err){console.warn('Story view could not be recorded:',err)}const canSee=me.uid===x.uid;let views='';if(canSee){try{const vs=await db.collection('stories').doc(x.id).collection('views').get();views=`<details class="story-viewers" open><summary>👀 Viewers (${vs.size})</summary>${vs.docs.map(v=>`<div>${esc(v.data().name||'Member')}</div>`).join('')||'<small>No viewers yet</small>'}</details>`}catch(err){views='<small>Viewer list unavailable. Check Firestore rules.</small>'}}modal(`<h2>${esc(x.name)}</h2><img class="big" src="${x.img}"><p style="margin-top:8px">${esc(x.text)}</p>${canSee?views:''}<button class="btn" onclick="closeModal()">Close</button>`)})});
+    document.querySelectorAll('.st').forEach(e=>e.onclick=async()=>{const x=l[e.dataset.i];try{if(me.uid!==x.uid)await db.collection('stories').doc(x.id).collection('views').doc(me.uid).set({uid:me.uid,name:my?.name||'Member',photo:my?.photo||'',viewedAt:TS()},{merge:true})}catch(err){console.warn('Story view could not be recorded:',err)}const canSee=me.uid===x.uid;let views='';if(canSee){try{const vs=await db.collection('stories').doc(x.id).collection('views').get();views=`<details class="story-viewers" open><summary>👀 Viewers (${vs.size})</summary>${vs.docs.map(v=>`<div>${esc(v.data().name||'Member')}</div>`).join('')||'<small>No viewers yet</small>'}</details>`}catch(err){views='<small>Viewer list unavailable. Check Firestore rules.</small>'}}modal(`<h2>${esc(x.name)}</h2><img class="big" src="${x.img}"><p style="margin-top:8px">${esc(x.text)}</p>${canSee?views:`<form id="storyReplyForm" class="story-reply-form"><input id="storyReplyInput" maxlength="500" placeholder="Reply to ${esc(x.name)}'s story…" autocomplete="off"><button class="btn" type="submit">Send reply</button></form>`}${canSee?'<button class="btn danger" id="deleteMyStory" type="button">Delete my story</button>':''}<button class="btn alt" onclick="closeModal()">Close</button>`);if(canSee){$('deleteMyStory').onclick=async()=>{if(!confirm('Delete this story? This cannot be undone.'))return;try{await db.collection('stories').doc(x.id).delete();closeModal();toast('Your story was deleted')}catch(err){console.error('Story delete failed:',err);toast('Story delete failed: '+(err.code||err.message))}}}if(!canSee){$('storyReplyForm').onsubmit=async ev=>{ev.preventDefault();const input=$('storyReplyInput'),btn=$('storyReplyForm').querySelector('button'),reply=input.value.trim();if(!reply)return toast('Type a reply first');if(!me||!my)return toast('Your profile is still loading');btn.disabled=true;try{const targetRoom=[me.uid,x.uid].sort().join('_');await db.collection('messages').add({room:targetRoom,from:me.uid,to:x.uid,name:my.name||'Member',photo:my.photo||'',text:reply,createdAt:Date.now(),ts:TS(),storyReply:{storyId:x.id,storyOwner:x.uid,storyOwnerName:x.name||'Member',storyText:x.text||''}});input.value='';closeModal();toast('Story reply sent to inbox 💌')}catch(err){console.error('Story reply failed:',err);toast('Reply not sent: '+(err.code||err.message))}finally{btn.disabled=false}}}})});
   // incoming DM alerts
   db.collection('messages').where('to','==',me.uid).onSnapshot(s=>s.docChanges().forEach(c=>{const m=c.doc.data();if(c.type==='added'&&(Number(m.createdAt)||m.ts?.toMillis?.()||0)>start&&m.room!==room){beep(660);toast('💌 '+m.name+': '+(m.text||'sent a photo'))}}));
   openRoom('public','# Public chat');
@@ -112,7 +121,8 @@ function openRoom(id,title,to){
       return ta-tb;
     });
     docs.forEach(d=>{const m=d.data();const mine=m.from===me.uid;const ms=Number(m.createdAt)||m.ts?.toMillis?.()||Date.now();const when=new Date(ms);
-      box.insertAdjacentHTML('beforeend',`<div class="m ${mine?'me':''}" data-message-id="${d.id}">${mine?'':`<b>${esc(m.name)}</b><br>`}${esc(m.text)}${m.img?`<img loading="lazy" src="${m.img}">`:''}<time>${when.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}${d.metadata.hasPendingWrites?' · sending…':''}</time></div>`)});
+      const storyContext=m.storyReply?`<div class="story-reply-context"><b>↩ Replied to ${esc(m.storyReply.storyOwnerName||'a story')}</b>${m.storyReply.storyText?`<span>${esc(m.storyReply.storyText)}</span>`:''}</div>`:'';
+      box.insertAdjacentHTML('beforeend',`<div class="m ${mine?'me':''}" data-message-id="${d.id}">${mine?'':`<b>${esc(m.name)}</b><br>`}${storyContext}${esc(m.text)}${m.img?`<img loading="lazy" src="${m.img}">`:''}<time>${when.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}${d.metadata.hasPendingWrites?' · sending…':''}</time></div>`)});
     box.scrollTop=box.scrollHeight;
     if(!first)s.docChanges().forEach(c=>{if(c.type==='added'&&c.doc.data().from!==me.uid)beep()});first=false;
   },e=>{console.error('Chat listener failed:',e);toast('Chat update failed: '+(e.code||e.message))});
