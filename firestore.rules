@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* ---------- helpers ---------- */
+    function signedIn()  { return request.auth != null; }
+    function isMember()  { return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous'; }
+    // Change the e-mail below if your admin Google account changes.
+    function isAdmin()   { return signedIn()
+                            && request.auth.token.email == 'gizmogamingboy@gmail.com'
+                            && request.auth.token.email_verified == true; }
+
+    /* ---------- user profiles (public list: NO e-mail stored here any more) ---------- */
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == uid
+                    && request.resource.data.age is int && request.resource.data.age >= 18
+                    && request.resource.data.coins <= 50
+                    && request.resource.data.suspended == false
+                    && request.resource.data.gender in ['Male', 'Female', 'Other', 'Prefer not to say'];
+      // Owners may edit their profile but not suspend themselves / change creation time.
+      // NOTE: coins / VIP are still written by the browser (as in the original app).
+      // For real protection move those to a Cloud Function.
+      allow update: if (signedIn() && request.auth.uid == uid
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['suspended', 'created', 'gender', 'age']))
+                    || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    /* ---------- private e-mail addresses (owner + admin only) ---------- */
+    match /userPrivate/{uid} {
+      allow read: if (signedIn() && request.auth.uid == uid) || isAdmin();
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow delete: if isAdmin();
+    }
+
+    /* ---------- chat messages ----------
+       Public/room messages : isPrivate == false  (readable by any signed-in user)
+       1-on-1 messages      : isPrivate == true, room == "uidA_uidB" (sorted pair),
+                              participants == [uidA, uidB]  → ONLY those two users can read.     */
+    match /messages/{id} {
+      allow read: if signedIn() && (
+            resource.data.isPrivate == false
+         || request.auth.uid in resource.data.participants
+         || resource.data.to == request.auth.uid
+         || resource.data.from == request.auth.uid
+         || isAdmin());
+
+      allow create: if signedIn()
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.text is string && request.resource.data.text.size() <= 1000
+        && request.resource.data.img is string && request.resource.data.img.size() < 900000
+        && (
+             ( request.resource.data.isPrivate == false && request.resource.data.to == null )
+          || ( request.resource.data.isPrivate == true
+               && request.resource.data.to is string
+               && request.resource.data.to != request.auth.uid
+               && request.resource.data.participants.size() == 2
+               && request.resource.data.participants.hasAll([request.auth.uid, request.resource.data.to])
+               && request.resource.data.room in [
+                    request.auth.uid + '_' + request.resource.data.to,
+                    request.resource.data.to + '_' + request.auth.uid ] )
+           );
+
+      allow update, delete: if isAdmin();
+    }
+
+    /* ---------- typing indicators (tiny, short-lived docs "<room>__<uid>") ---------- */
+    match /typing/{docId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid
+                            && docId.matches('.*__' + request.auth.uid);
+      allow delete: if signedIn() && docId.matches('.*__' + request.auth.uid);
+    }
+
+    /* ---------- public chat rooms ---------- */
+    match /rooms/{roomId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.owner == request.auth.uid
+                    && request.resource.data.name is string && request.resource.data.name.size() <= 24;
+      allow delete: if isAdmin() || (signedIn() && resource.data.owner == request.auth.uid);
+      allow update: if isAdmin();
+    }
+
+    /* ---------- stories ---------- */
+    match /stories/{storyId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow update: if false;
+
+      match /views/{viewerUid} {
+        allow create, update: if signedIn() && request.auth.uid == viewerUid;
+        allow read: if signedIn() && (
+              get(/databases/$(database)/documents/stories/$(storyId)).data.uid == request.auth.uid
+           || isAdmin());
+        allow delete: if false;
+      }
+    }
+
+    /* ---------- admin-managed content ---------- */
+    match /freeSites/{siteId} {
+      allow read: if isMember();
+      allow write: if isAdmin();
+    }
+    match /siteSettings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

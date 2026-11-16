@@ -1,0 +1,31 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "room", "order": "ASCENDING" },
+        { "fieldPath": "ts", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "room", "order": "ASCENDING" },
+        { "fieldPath": "isPrivate", "order": "ASCENDING" },
+        { "fieldPath": "ts", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "room", "order": "ASCENDING" },
+        { "fieldPath": "participants", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "ts", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
