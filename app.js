@@ -27,7 +27,9 @@ function prefixLength(data){return data.indexOf(',')+1;}
 async function spend(n){const ref=db.collection('users').doc(me.uid);try{await db.runTransaction(async t=>{const d=await t.get(ref);if((d.data().coins||0)<n)throw 0;t.update(ref,{coins:INC(-n)})});return true}catch(e){toast('Not enough coins 🪙');return false}}
 const today=()=>new Date().toISOString().slice(0,10);
 function status(u){const t=u.lastSeen?.toMillis?.()||0;if(Date.now()-t>90000)return'off';return u.away?'away':'on'}
-const dmId=uid=>[me.uid,uid].sort().join('_');
+const dmId=uid=>[me.uid,String(uid)].sort().join('_');
+function dmPeerFromMessage(m){return m.from===me.uid?m.to:m.from}
+
 
 /* Footer social links are managed from the admin panel. */
 function renderSocialLinks(data){
@@ -86,7 +88,35 @@ function begin(){
   $('welcome').hidden=true;$('app').hidden=false;
   db.collection('users').doc(me.uid).onSnapshot(d=>{my=d.data();if(!my)return;if(my.suspended){auth.signOut();return}
     $('coins').textContent=my.coins||0;$('meImg').src=my.photo||'';$('msgs').style.backgroundImage=my.wallpaper?WALLS[my.wallpaper]:'none';$('vipBtn').textContent=(my.vipUntil||0)>Date.now()?'⭐ VIP active':'⭐ Get VIP';$('vipBtn').classList.toggle('vip-active',(my.vipUntil||0)>Date.now())});
-  db.collection('users').onSnapshot(s=>{users={};s.forEach(d=>users[d.id]=d.data());renderUsers()});
+  db.collection('users').onSnapshot(s=>{users={};s.forEach(d=>users[d.id]=d.data());renderUsers();if(typeof renderInbox==='function')renderInbox()});
+  // Build a separate inbox entry for each private conversation (room is the sorted UID pair).
+  let inboxIncoming=[],inboxOutgoing=[];
+  const renderInbox=()=>{
+    const grouped=new Map();
+    [...inboxIncoming,...inboxOutgoing].forEach(d=>{
+      const m=d.data(),other=dmPeerFromMessage(m);
+      if(!other||!m.room||m.room==='public'||!m.to)return;
+      const old=grouped.get(m.room);
+      const stamp=Number(m.createdAt)||m.ts?.toMillis?.()||0;
+      if(!old||stamp>old.stamp)grouped.set(m.room,{room:m.room,other,stamp,m});
+    });
+    const items=[...grouped.values()].sort((a,b)=>b.stamp-a.stamp);
+    const box=$('dmInbox');if(!box)return;
+    box.innerHTML=items.map(x=>{
+      const u=users[x.other]||{},label=u.name||x.m.name||'Member';
+      const preview=x.m.img?'📷 Photo':(x.m.text||'Message');
+      return `<button class="dm-inbox-item ${room===x.room?'active':''}" data-dm="${esc(x.other)}"><b>${esc(label)}</b><small>${esc(preview.slice(0,48))}</small></button>`;
+    }).join('')||'<small class="inbox-empty">No private chats yet</small>';
+    box.querySelectorAll('[data-dm]').forEach(el=>el.onclick=()=>{
+      const uid=el.dataset.dm, u=users[uid]||{};
+      openRoom(dmId(uid),'💬 '+(u.name||'Private chat'),uid);
+      $('side').classList.remove('open');
+      renderInbox();
+    });
+  };
+  db.collection('messages').where('to','==',me.uid).onSnapshot(s=>{inboxIncoming=s.docs;renderInbox()},e=>console.warn('Inbox incoming listener:',e));
+  db.collection('messages').where('from','==',me.uid).onSnapshot(s=>{inboxOutgoing=s.docs;renderInbox()},e=>console.warn('Inbox outgoing listener:',e));
+
   const ping=()=>db.collection('users').doc(me.uid).update({lastSeen:TS(),away:document.hidden}).catch(()=>{});
   ping();timers.push(setInterval(ping,30000),setInterval(renderUsers,30000));
   document.addEventListener('visibilitychange',ping);
@@ -94,7 +124,7 @@ function begin(){
     document.querySelectorAll('[data-r]').forEach(e=>e.onclick=()=>{openRoom(e.dataset.r,e.textContent);$('side').classList.remove('open')})});
   db.collection('stories').where('exp','>',Date.now()).onSnapshot(s=>{const l=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.exp-a.exp);
     $('stories').innerHTML=l.length?l.map((x,i)=>`<div class="st" data-i="${i}"><img loading="lazy" src="${x.photo||''}"><span>${esc(x.name)}</span></div>`).join(''):'<small style="color:var(--mut)">No stories yet. Post one!</small>';
-    document.querySelectorAll('.st').forEach(e=>e.onclick=async()=>{const x=l[e.dataset.i];try{if(me.uid!==x.uid)await db.collection('stories').doc(x.id).collection('views').doc(me.uid).set({uid:me.uid,name:my?.name||'Member',photo:my?.photo||'',viewedAt:TS()},{merge:true})}catch(err){console.warn('Story view could not be recorded:',err)}const canSee=me.uid===x.uid;let views='';if(canSee){try{const vs=await db.collection('stories').doc(x.id).collection('views').get();views=`<details class="story-viewers" open><summary>👀 Viewers (${vs.size})</summary>${vs.docs.map(v=>`<div>${esc(v.data().name||'Member')}</div>`).join('')||'<small>No viewers yet</small>'}</details>`}catch(err){views='<small>Viewer list unavailable. Check Firestore rules.</small>'}}modal(`<h2>${esc(x.name)}</h2><img class="big" src="${x.img}"><p style="margin-top:8px">${esc(x.text)}</p>${canSee?views:`<form id="storyReplyForm" class="story-reply-form"><input id="storyReplyInput" maxlength="500" placeholder="Reply to ${esc(x.name)}'s story…" autocomplete="off"><button class="btn" type="submit">Send reply</button></form>`}${canSee?'<button class="btn danger" id="deleteMyStory" type="button">Delete my story</button>':''}<button class="btn alt" onclick="closeModal()">Close</button>`);if(canSee){$('deleteMyStory').onclick=async()=>{if(!confirm('Delete this story? This cannot be undone.'))return;try{await db.collection('stories').doc(x.id).delete();closeModal();toast('Your story was deleted')}catch(err){console.error('Story delete failed:',err);toast('Story delete failed: '+(err.code||err.message))}}}if(!canSee){$('storyReplyForm').onsubmit=async ev=>{ev.preventDefault();const input=$('storyReplyInput'),btn=$('storyReplyForm').querySelector('button'),reply=input.value.trim();if(!reply)return toast('Type a reply first');if(!me||!my)return toast('Your profile is still loading');btn.disabled=true;try{const targetRoom=[me.uid,x.uid].sort().join('_');await db.collection('messages').add({room:targetRoom,from:me.uid,to:x.uid,name:my.name||'Member',photo:my.photo||'',text:reply,createdAt:Date.now(),ts:TS(),storyReply:{storyId:x.id,storyOwner:x.uid,storyOwnerName:x.name||'Member',storyText:x.text||''}});input.value='';closeModal();toast('Story reply sent to inbox 💌')}catch(err){console.error('Story reply failed:',err);toast('Reply not sent: '+(err.code||err.message))}finally{btn.disabled=false}}}})});
+    document.querySelectorAll('.st').forEach(e=>e.onclick=async()=>{const x=l[e.dataset.i];try{if(me.uid!==x.uid)await db.collection('stories').doc(x.id).collection('views').doc(me.uid).set({uid:me.uid,name:my?.name||'Member',photo:my?.photo||'',viewedAt:TS()},{merge:true})}catch(err){console.warn('Story view could not be recorded:',err)}const canSee=me.uid===x.uid;let views='';if(canSee){try{const vs=await db.collection('stories').doc(x.id).collection('views').get();views=`<details class="story-viewers" open><summary>👀 Viewers (${vs.size})</summary>${vs.docs.map(v=>`<div>${esc(v.data().name||'Member')}</div>`).join('')||'<small>No viewers yet</small>'}</details>`}catch(err){views='<small>Viewer list unavailable. Check Firestore rules.</small>'}}modal(`<h2>${esc(x.name)}</h2><img class="big" src="${x.img}"><p style="margin-top:8px">${esc(x.text)}</p>${canSee?views:`<form id="storyReplyForm" class="story-reply-form"><input id="storyReplyInput" maxlength="500" placeholder="Reply to ${esc(x.name)}'s story…" autocomplete="off"><button class="btn" type="submit">Send reply</button></form>`}${canSee?'<button class="btn danger" id="deleteMyStory" type="button">Delete my story</button>':''}<button class="btn alt" onclick="closeModal()">Close</button>`);if(canSee){$('deleteMyStory').onclick=async()=>{if(!confirm('Delete this story? This cannot be undone.'))return;try{await db.collection('stories').doc(x.id).delete();closeModal();toast('Your story was deleted')}catch(err){console.error('Story delete failed:',err);toast('Story delete failed: '+(err.code||err.message))}}}if(!canSee){$('storyReplyForm').onsubmit=async ev=>{ev.preventDefault();const input=$('storyReplyInput'),btn=$('storyReplyForm').querySelector('button'),reply=input.value.trim();if(!reply)return toast('Type a reply first');if(!me||!my)return toast('Your profile is still loading');btn.disabled=true;try{const targetRoom=dmId(x.uid);await db.collection('messages').add({room:targetRoom,from:me.uid,to:x.uid,name:my.name||'Member',photo:my.photo||'',text:reply,createdAt:Date.now(),ts:TS(),storyReply:{storyId:x.id,storyOwner:x.uid,storyOwnerName:x.name||'Member',storyText:x.text||''}});input.value='';closeModal();toast('Story reply sent to inbox 💌')}catch(err){console.error('Story reply failed:',err);toast('Reply not sent: '+(err.code||err.message))}finally{btn.disabled=false}}}})});
   // incoming DM alerts
   db.collection('messages').where('to','==',me.uid).onSnapshot(s=>s.docChanges().forEach(c=>{const m=c.doc.data();if(c.type==='added'&&(Number(m.createdAt)||m.ts?.toMillis?.()||0)>start&&m.room!==room){beep(660);toast('💌 '+m.name+': '+(m.text||'sent a photo'))}}));
   openRoom('public','# Public chat');
@@ -130,10 +160,12 @@ function openRoom(id,title,to){
 async function send(text,img){
   if(!text&&!img)return false;
   if(!me||!my){toast('Your profile is still loading. Please try again.');return false}
+  const sendRoom=room,sendPeer=peer;
+  if(sendPeer&&sendRoom!==dmId(sendPeer)){toast('Private chat changed. Please reopen the conversation and try again.');return false}
   try{
-    // A client timestamp is immediately available to every listener, including the sender's local snapshot.
-    await db.collection('messages').add({room,from:me.uid,to:peer||null,name:my.name||'Member',photo:my.photo||'',text:text||'',img:img||'',createdAt:Date.now(),ts:TS()});
-    if(img&&peer){db.collection('users').doc(me.uid).update({coins:INC(IMG)}).catch(console.error);toast('+'+IMG+' 🪙 for sharing a photo')}
+    // Capture the selected conversation before the async write; never use a later active room.
+    await db.collection('messages').add({room:sendRoom,from:me.uid,to:sendPeer||null,name:my.name||'Member',photo:my.photo||'',text:text||'',img:img||'',createdAt:Date.now(),ts:TS()});
+    if(img&&sendPeer){db.collection('users').doc(me.uid).update({coins:INC(IMG)}).catch(console.error);toast('+'+IMG+' 🪙 for sharing a photo')}
     return true;
   }catch(err){console.error('Message send failed:',err);toast('Message not sent: '+(err.code||err.message));return false}
 }
