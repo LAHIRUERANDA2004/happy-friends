@@ -62,6 +62,9 @@ service cloud.firestore {
                     request.resource.data.to + '_' + request.auth.uid ] )
            );
 
+      // read receipts: only the RECIPIENT may add deliveredAt / readAt (nothing else can change)
+      allow update: if signedIn() && resource.data.to == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveredAt','readAt']);
       allow update, delete: if isAdmin();
     }
 
