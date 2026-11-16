@@ -87,7 +87,7 @@ function begin(){
     $('stories').innerHTML=l.length?l.map((x,i)=>`<div class="st" data-i="${i}"><img loading="lazy" src="${x.photo||''}"><span>${esc(x.name)}</span></div>`).join(''):'<small style="color:var(--mut)">No stories yet. Post one!</small>';
     document.querySelectorAll('.st').forEach(e=>e.onclick=async()=>{const x=l[e.dataset.i];try{if(me.uid!==x.uid)await db.collection('stories').doc(x.id).collection('views').doc(me.uid).set({uid:me.uid,name:my?.name||'Member',photo:my?.photo||'',viewedAt:TS()},{merge:true})}catch(err){console.warn('Story view could not be recorded:',err)}const canSee=me.uid===x.uid;let views='';if(canSee){try{const vs=await db.collection('stories').doc(x.id).collection('views').get();views=`<details class="story-viewers" open><summary>👀 Viewers (${vs.size})</summary>${vs.docs.map(v=>`<div>${esc(v.data().name||'Member')}</div>`).join('')||'<small>No viewers yet</small>'}</details>`}catch(err){views='<small>Viewer list unavailable. Check Firestore rules.</small>'}}modal(`<h2>${esc(x.name)}</h2><img class="big" src="${x.img}"><p style="margin-top:8px">${esc(x.text)}</p>${canSee?views:''}<button class="btn" onclick="closeModal()">Close</button>`)})});
   // incoming DM alerts
-  db.collection('messages').where('to','==',me.uid).onSnapshot(s=>s.docChanges().forEach(c=>{const m=c.doc.data();if(c.type==='added'&&m.ts&&m.ts.toMillis()>start&&m.room!==room){beep(660);toast('💌 '+m.name+': '+(m.text||'sent a photo'))}}));
+  db.collection('messages').where('to','==',me.uid).onSnapshot(s=>s.docChanges().forEach(c=>{const m=c.doc.data();if(c.type==='added'&&(Number(m.createdAt)||m.ts?.toMillis?.()||0)>start&&m.room!==room){beep(660);toast('💌 '+m.name+': '+(m.text||'sent a photo'))}}));
   openRoom('public','# Public chat');
   if(my&&my.lastDaily!==today())setTimeout(rewards,800);
 }
@@ -102,19 +102,27 @@ $('usersBtn').onclick=()=>$('side').classList.toggle('open');
 let peer=null;
 function openRoom(id,title,to){
   room=id;peer=to||null;roomTitle=title;$('roomName').textContent=title;first=true;if(unsub)unsub();
-  unsub=db.collection('messages').where('room','==',id).orderBy('ts').limitToLast(100).onSnapshot({includeMetadataChanges:true},s=>{
+  // Listen by room only. Sorting locally avoids waiting for serverTimestamp() and avoids a composite-index dependency.
+  unsub=db.collection('messages').where('room','==',id).onSnapshot({includeMetadataChanges:true},s=>{
     const box=$('msgs');box.innerHTML='';
-    s.forEach(d=>{const m=d.data();const mine=m.from===me.uid;const when=m.ts?.toDate?m.ts.toDate():new Date();
-      box.insertAdjacentHTML('beforeend',`<div class="m ${mine?'me':''}">${mine?'':`<b>${esc(m.name)}</b><br>`}${esc(m.text)}${m.img?`<img loading="lazy" src="${m.img}">`:''}<time>${when.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}${d.metadata.hasPendingWrites?' · sending…':''}</time></div>`)});
+    const docs=s.docs.slice().sort((a,b)=>{
+      const ma=a.data(),mb=b.data();
+      const ta=Number(ma.createdAt)||ma.ts?.toMillis?.()||0;
+      const tb=Number(mb.createdAt)||mb.ts?.toMillis?.()||0;
+      return ta-tb;
+    });
+    docs.forEach(d=>{const m=d.data();const mine=m.from===me.uid;const ms=Number(m.createdAt)||m.ts?.toMillis?.()||Date.now();const when=new Date(ms);
+      box.insertAdjacentHTML('beforeend',`<div class="m ${mine?'me':''}" data-message-id="${d.id}">${mine?'':`<b>${esc(m.name)}</b><br>`}${esc(m.text)}${m.img?`<img loading="lazy" src="${m.img}">`:''}<time>${when.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}${d.metadata.hasPendingWrites?' · sending…':''}</time></div>`)});
     box.scrollTop=box.scrollHeight;
     if(!first)s.docChanges().forEach(c=>{if(c.type==='added'&&c.doc.data().from!==me.uid)beep()});first=false;
-  },e=>toast('Create the Firestore index (see console link)'));
+  },e=>{console.error('Chat listener failed:',e);toast('Chat update failed: '+(e.code||e.message))});
 }
 async function send(text,img){
   if(!text&&!img)return false;
   if(!me||!my){toast('Your profile is still loading. Please try again.');return false}
   try{
-    await db.collection('messages').add({room,from:me.uid,to:peer||null,name:my.name||'Member',photo:my.photo||'',text:text||'',img:img||'',ts:TS()});
+    // A client timestamp is immediately available to every listener, including the sender's local snapshot.
+    await db.collection('messages').add({room,from:me.uid,to:peer||null,name:my.name||'Member',photo:my.photo||'',text:text||'',img:img||'',createdAt:Date.now(),ts:TS()});
     if(img&&peer){db.collection('users').doc(me.uid).update({coins:INC(IMG)}).catch(console.error);toast('+'+IMG+' 🪙 for sharing a photo')}
     return true;
   }catch(err){console.error('Message send failed:',err);toast('Message not sent: '+(err.code||err.message));return false}
