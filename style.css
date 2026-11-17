@@ -269,3 +269,27 @@ div.vo-card:not(.done){cursor:default}
 .faq details{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 14px;margin-bottom:8px}
 .faq summary{cursor:pointer;font-weight:800}.faq p{color:var(--mut);font-size:13px;line-height:1.6;margin-top:6px;text-align:left}
 .footer-links{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}.footer-links a{color:var(--pri);font-weight:700;font-size:13px}
+
+/* ===== v4.1: highlighted Pricing button in the top headers ===== */
+.pricing-btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap;text-decoration:none;
+  background:linear-gradient(135deg,#ff5d8f 0%,#ff8a5d 55%,#ffb800 100%);color:#fff;border:0;border-radius:99px;
+  padding:8px 15px;font-weight:900;letter-spacing:.2px;text-shadow:0 1px 2px rgba(120,40,0,.35);
+  box-shadow:0 3px 12px rgba(255,93,143,.45);animation:priceGlow 2.6s ease-in-out infinite;
+  transition:transform .18s,box-shadow .18s,filter .18s}
+.pricing-btn:hover,.pricing-btn:focus-visible{transform:translateY(-2px) scale(1.06);filter:brightness(1.06);
+  box-shadow:0 6px 20px rgba(255,184,0,.65),0 0 0 3px rgba(255,93,143,.25);outline:0}
+.pricing-btn:active{transform:scale(.95)}
+@keyframes priceGlow{0%,100%{box-shadow:0 3px 12px rgba(255,93,143,.40)}50%{box-shadow:0 3px 20px rgba(255,184,0,.75)}}
+#app>.top>.row{gap:6px}
+@media(max-width:600px){
+  /* landing page: Pricing takes the left slot, Free Websites moves to a slim second row */
+  #welcome>.top>.row>a.btn.pricing-btn{grid-column:1;grid-row:1}
+  #welcome>.top>.row>a.btn.ghost{grid-column:1/-1;grid-row:2;padding:6px 10px;font-size:11px}
+  /* app header: compact so Coins, Theme, Rules, Pricing and avatar fit one line */
+  #app>.top>.row .pricing-btn{padding:6px 9px;font-size:11px;gap:2px}
+  #app>.top>.row #rulesBtn{padding:6px 8px;font-size:11px}
+}
+@media(max-width:380px){
+  #app>.top>.row .pricing-btn{padding:6px 7px;font-size:10px}
+  #app>.top>.row #rulesBtn{padding:6px 6px;font-size:10px}
+}
