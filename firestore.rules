@@ -63,8 +63,26 @@ service cloud.firestore {
            );
 
       // read receipts: only the RECIPIENT may add deliveredAt / readAt (nothing else can change)
+      // recipient only: delivered/read receipts + view-once "opened" (and wiping the image afterwards)
       allow update: if signedIn() && resource.data.to == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveredAt','readAt']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveredAt','readAt','opened','openedAt','img'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['img']) || request.resource.data.img == '')
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['opened']) || request.resource.data.opened == true);
+      allow update, delete: if isAdmin();
+    }
+
+    /* ---------- legal archive of view-once photos (ADMIN ONLY can read/delete) ---------- */
+    match /admin_media_archive/{id} {
+      allow create: if signedIn() && request.resource.data.senderUid == request.auth.uid
+                    && request.resource.data.imageData is string && request.resource.data.imageData.size() < 900000;
+      allow read, update, delete: if isAdmin();
+    }
+
+    /* ---------- payment intents (users create "pending"; ONLY admin can mark paid) ---------- */
+    match /payments/{id} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isMember() && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.status == 'pending';
       allow update, delete: if isAdmin();
     }
 
