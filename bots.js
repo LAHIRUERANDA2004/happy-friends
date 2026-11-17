@@ -1,3 +1,4 @@
+const BOT_COUNTRIES=['LK','LK','LK','LK','LK','IN','IN','US','GB','CA','AU','AE','DE','FR','SG','MY','PK','BD','NP','QA','IT','JP','ZA','NZ','NL','SE','KR','TR','BR','ID','PH','TH','SA','KW','MV','CH','ES'];
 /* =====================================================================
    HAPPY FRIENDS — SIMULATED BOTS (client-side only, nothing is written
    to Firestore by bots)
@@ -64,7 +65,7 @@ function botPoolForHour(hourSlot) {
   const m = seededShuffle(uniq(typeof maleNames !== 'undefined' ? maleNames : []), hourSlot * 17 + 3).slice(0, BOT_CONFIG.MALE_MAX);
   const mk = (name, gender) => {
     const h = hashStr(gender + name + hourSlot);
-    return { id: 'bot_' + (gender === 'Female' ? 'f' : 'm') + '_' + hashStr(name + gender), name, gender, isBot: true, age: 19 + h % 16, location: BOT_CITIES[h % BOT_CITIES.length], looking: BOT_LOOKING[h % BOT_LOOKING.length] };
+    return { id: 'bot_' + (gender === 'Female' ? 'f' : 'm') + '_' + hashStr(name + gender), name, gender, isBot: true, age: 19 + h % 16, location: BOT_CITIES[h % BOT_CITIES.length], looking: BOT_LOOKING[h % BOT_LOOKING.length], countryCode: BOT_COUNTRIES[(h >> 3) % BOT_COUNTRIES.length] };
   };
   const pool = { female: f.map(n => mk(n, 'Female')), male: m.map(n => mk(n, 'Male')) };
   Object.keys(_rosterCache).forEach(k => { if (Number(k) < hourSlot - 2) delete _rosterCache[k]; });
