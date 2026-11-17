@@ -10,7 +10,7 @@ const auth=firebase.auth(),db=firebase.firestore(),TS=()=>firebase.firestore.Fie
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const WALLS={Sunset:'linear-gradient(135deg,#ffd6a5,#ffadad)',Ocean:'linear-gradient(135deg,#a0e7e5,#b4f8c8)',Lavender:'linear-gradient(135deg,#cdb4db,#a2d2ff)',Mint:'linear-gradient(135deg,#d8f3dc,#fefae0)',Night:'linear-gradient(135deg,#243b55,#141e30)',Candy:'linear-gradient(135deg,#fbc2eb,#a6c1ee)'};
-const COST={story:10,room:50,wall:30,vip:100},DAILY=20,SHARE=10,IMG=1;
+const COST={story:10,room:50,wall:30,vip:100},DAILY=20,VIP_DAILY=100,SHARE=10,IMG=1;
 /* Built-in public rooms (shared by everyone; bots chat in them too). Edit freely. */
 const DEFAULT_ROOMS=[{id:'public',name:'Public chat'},{id:'lounge',name:'Friends Lounge'},{id:'music',name:'Music & Movies'},{id:'night',name:'Night Owls'}];
 const BASE_TITLE='Happy Friends – Meet, chat, make friends';
@@ -38,7 +38,8 @@ function avatar(u){
   const ch=((u&&u.name||'?').trim()[0]||'?').toUpperCase(),col=u&&u.gender==='Male'?'#3b82f6':u&&u.gender==='Female'?'#ec4899':'#8b5cf6';
   return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="'+col+'"/><text x="32" y="43" font-size="30" font-family="Arial" font-weight="700" text-anchor="middle" fill="#fff">'+esc(ch)+'</text></svg>');
 }
-function nameHtml(u){return '<span class="nm '+gcls(u&&u.gender)+'">'+esc(u&&u.name||'Member')+'</span>'+gsym(u&&u.gender)+(u&&u.isBot&&BOT_CONFIG.labelAsBot?' <span class="bot-tag">bot</span>':'')}
+function flagHtml(cc){return cc?'<span class="flag" title="'+esc(countryName(cc))+'">'+flagOf(cc)+'</span> ':''}
+function nameHtml(u){return flagHtml(u&&u.countryCode)+'<span class="nm '+gcls(u&&u.gender)+'">'+esc(u&&u.name||'Member')+'</span>'+gsym(u&&u.gender)+(u&&u.isBot&&BOT_CONFIG.labelAsBot?' <span class="bot-tag">bot</span>':'')}
 const today=()=>new Date().toISOString().slice(0,10);
 const isVip=u=>!!u&&(u.vipUntil||0)>Date.now();
 /* avatar with optional animated gold VIP ring */
@@ -55,9 +56,15 @@ function ack(docs,field){
   if(!me)return;
   const todo=docs.filter(d=>{const m=d.data();return m.to===me.uid&&!m[field]&&!d.metadata.hasPendingWrites&&!ackSent.has(field+d.id)}).slice(0,100);
   if(!todo.length)return;
-  const b=db.batch();
-  todo.forEach(d=>{ackSent.add(field+d.id);const u=field==='readAt'?{readAt:TS()}:{deliveredAt:TS()};if(field==='readAt'&&!d.data().deliveredAt)u.deliveredAt=TS();b.update(d.ref,u)});
-  b.commit().catch(e=>{console.warn('Receipt update skipped:',e.code||e.message);todo.forEach(d=>ackSent.delete(field+d.id))});
+  todo.forEach(d=>{
+    const key=field+d.id;ackSent.add(key);
+    const u=field==='readAt'?{readAt:TS()}:{deliveredAt:TS()};
+    if(field==='readAt'&&!d.data().deliveredAt)u.deliveredAt=TS();
+    d.ref.update(u).catch(e=>{
+      console.error('Tick update failed ('+(e.code||e.message)+'). Publish the latest firestore.rules in Firebase Console > Firestore > Rules.');
+      setTimeout(()=>ackSent.delete(key),60000);   // retry later
+    });
+  });
 }
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const stampOf=m=>Number(m.createdAt)||(m.ts&&m.ts.toMillis&&m.ts.toMillis())||0;
@@ -183,7 +190,7 @@ function startSession(){
     my=d.data();
     if(my.suspended){alert('Your account is suspended.');auth.signOut();return}
     if(onboarding){onboarding=false;guestAuth=null;closeModal()}   // profile exists now -> sign-up form is done
-    if(!appStarted){appStarted=true;begin()}
+    if(!appStarted){appStarted=true;begin();if(!my.countryCode)setTimeout(()=>toast('🌍 Add your country in Profile to meet people from your country first'),6000)}
     paintProfile();
   },err=>{
     console.error('Profile loading failed:',err);hideLoader();
@@ -209,6 +216,7 @@ function onboard(guest){
   <p style="color:var(--mut)">${guest?'Guest accounts can chat. Stories, chat wallpapers and profile picture uploads require Google registration.':'You must be 18 or older.'}</p>
   <label>Your name</label><input id="oName" maxlength="24" value="${esc(guest?'':(me&&me.displayName)||'')}" autocomplete="nickname">
   <label>Age</label><input id="oAge" type="number" min="18" max="100" inputmode="numeric" placeholder="Your age">
+  <label>Country</label><select id="oCountry">${countryOptions(Intl.DateTimeFormat().resolvedOptions().timeZone==='Asia/Colombo'?'LK':'')}</select>
   <label>Gender</label><select id="oGender"><option value="">Select gender</option><option>Male</option><option>Female</option><option>Other</option><option>Prefer not to say</option></select>
   ${guest?'':lookHtml}
   <button class="btn" id="oGo">Join Happy Friends</button>
@@ -220,13 +228,14 @@ function onboard(guest){
     if(!name)return toast('Enter your name');
     if(!Number.isInteger(age)||age<18||age>100)return toast('You must be 18 or older');
     if(!gender)return toast('Select your gender');
+    const countryCode=$('oCountry').value;if(!countryCode)return toast('Select your country');
     const look=guest?'Guest':$('oLook').value,btn=$('oGo');
     setBusy(btn,true,'Joining…');
     try{
       if(!auth.currentUser&&guestAuth)await guestAuth;
       const u=auth.currentUser;if(!u)throw new Error('Not signed in yet. Please try again.');
       me=u;
-      const data={name,age,gender,accountType:guest?'guest':'registered',photo:guest?'':(u.photoURL||''),location:'',looking:look,coins:guest?0:50,lastDaily:'',lastShare:'',away:false,lastSeen:TS(),suspended:false,wallpaper:'',created:TS()};
+      const data={name,age,gender,countryCode,country:countryName(countryCode),accountType:guest?'guest':'registered',photo:guest?'':(u.photoURL||''),location:'',looking:look,coins:guest?0:50,lastDaily:'',lastShare:'',away:false,lastSeen:TS(),suspended:false,wallpaper:'',created:TS()};
       const batch=db.batch();
       batch.set(db.collection('users').doc(u.uid),data);
       if(!guest&&u.email)batch.set(db.collection('userPrivate').doc(u.uid),{email:u.email,updatedAt:TS()});   // email kept private (not in the public users list)
@@ -262,7 +271,7 @@ function begin(){
   if(!me)return;
   setAuthStatus('');hideLoader();$('welcome').hidden=true;$('app').hidden=false;
   // users (most recently active first → scales better than loading everyone)
-  unsubs.push(db.collection('users').orderBy('lastSeen','desc').limit(200).onSnapshot(s=>{users={};s.forEach(d=>users[d.id]=d.data());renderUsers();renderInbox();paintRoomHead()},listenErr('Users')));
+  unsubs.push(db.collection('users').orderBy('lastSeen','desc').limit(200).onSnapshot(s=>{users={};s.forEach(d=>users[d.id]=d.data());renderUsers();renderInbox();paintRoomHead();refreshTicks()},listenErr('Users')));
   // private inbox: every message sent to me / by me (room = sorted UID pair)
   unsubs.push(db.collection('messages').where('to','==',me.uid).onSnapshot(s=>{
     inboxIncoming=s.docs;ack(s.docs,'deliveredAt');
@@ -281,7 +290,7 @@ function begin(){
   timers.push(setInterval(ping,30000),setInterval(()=>{renderUsers();paintRoomHead()},30000),setInterval(roomTick,1000),setInterval(rosterWatch,5000),setInterval(renderStories,60000));
   renderRooms();rosterWatch();
   openRoom({id:'public',kind:'room',title:'Public chat'});
-  if(my&&my.lastDaily!==today())setTimeout(()=>{if(my&&$('modal').hidden)rewards()},1200);
+  if(my&&(my.lastDaily!==today()||(isVip(my)&&my.lastVipDaily!==today())))setTimeout(()=>{if(my&&$('modal').hidden)rewards()},1200);
 }
 document.addEventListener('visibilitychange',()=>{if(!me||!appStarted)return;db.collection('users').doc(me.uid).update({lastSeen:TS(),away:document.hidden}).catch(()=>{});if(!document.hidden)markReadCurrent()});
 
@@ -299,10 +308,11 @@ $('rooms').onclick=e=>{const el=e.target.closest('[data-r]');if(!el)return;openR
    PEOPLE (real users + simulated bots) — gender colours
    ===================================================================== */
 function peopleList(){
-  const real=Object.entries(users).filter(([id,u])=>id!==me.uid&&!u.suspended).map(([id,u])=>({id,u,s:status(u),bot:false}));
+  const cc=(my&&my.countryCode)||'';
+  const real=Object.entries(users).filter(([id,u])=>id!==me.uid&&!u.suspended).map(([id,u])=>({id,u,s:status(u),bot:false})).filter(x=>x.s!=='off'||isVip(x.u));
   const bots=botsOnlineAt().map(b=>({id:b.id,u:b,s:'on',bot:true}));
-  const vip=x=>Number((x.u.vipUntil||0)>Date.now());
-  return [...real,...bots].sort((a,b)=>vip(b)-vip(a)||'on away off'.indexOf(a.s)-'on away off'.indexOf(b.s));
+  const vip=x=>Number(isVip(x.u)),same=x=>Number(!!cc&&x.u.countryCode===cc),grp=x=>x.s==='off'?1:0;
+  return [...real,...bots].sort((a,b)=>grp(a)-grp(b)||same(b)-same(a)||vip(b)-vip(a)||'on away off'.indexOf(a.s)-'on away off'.indexOf(b.s));
 }
 function renderUsers(){
   if(!me)return;
@@ -310,7 +320,7 @@ function renderUsers(){
   const h=$('onlineCount');if(h)h.textContent=online+' online';
   $('users').innerHTML=l.map(({id,u,s,bot})=>{
     const unread=bot?0:(unreadByRoom[dmId(id)]||0);
-    return `<div class="u ${gcls(u.gender)}" ${bot?'data-bot':'data-u'}="${esc(id)}">${avHtml(u,'ring '+gcls(u.gender))}<div><b>${nameHtml(u)} ${(u.vipUntil||0)>Date.now()?'<span class="vip-badge">VIP</span>':''}</b><small>${esc(u.location||'')}${u.location&&u.looking?' · ':''}${esc(u.looking||'')}</small></div>${unread?`<span class="badge">${unread>99?'99+':unread}</span>`:''}<i class="dot ${s}"></i></div>`;
+    return `<div class="u ${gcls(u.gender)}" ${bot?'data-bot':'data-u'}="${esc(id)}">${avHtml(u,'ring '+gcls(u.gender))}<div><b>${nameHtml(u)} ${(u.vipUntil||0)>Date.now()?'<span class="vip-badge">VIP</span>':''}</b><small>${s==='off'?'<span class="offvip">Offline VIP</span> ':''}${esc(u.location||'')}${u.location&&u.looking?' · ':''}${esc(u.looking||'')}</small></div>${unread?`<span class="badge">${unread>99?'99+':unread}</span>`:''}<i class="dot ${s}"></i></div>`;
   }).join('')||'<small>No users yet</small>';
 }
 $('users').onclick=e=>{
@@ -348,7 +358,7 @@ function renderInbox(){
   const box=$('dmInbox');
   if(box)box.innerHTML=items.map(x=>{
     const u=users[x.other]||{name:x.m.name,gender:x.m.gender},un=unreadByRoom[x.room]||0;
-    const preview=x.m.img?'📷 Photo':(x.m.text||'Message');
+    const preview=x.m.viewOnce?(x.m.opened?'💣 Opened':'📷 View-once photo'):(x.m.img?'📷 Photo':(x.m.text||'Message'));
     return `<button class="dm-inbox-item ${roomKind==='dm'&&room===x.room?'active':''} ${un?'has-unread':''}" data-dm="${esc(x.other)}"><span class="dm-top"><b>${nameHtml(u)}</b>${un?`<span class="badge">${un>99?'99+':un}</span>`:''}</span><small>${esc(preview.slice(0,48))}</small></button>`;
   }).join('')||'<small class="inbox-empty">No private chats yet</small>';
   const ub=$('usersBadge');if(ub){ub.hidden=!total;ub.textContent=total>99?'99+':total}
@@ -430,20 +440,27 @@ function openRoom(o){
 function buildItems(){
   const items=[];
   if(roomKind==='bot'){
-    (botChats[botPeer.id]||[]).forEach(x=>items.push({key:x.id,mine:x.mine,ms:x.ms,text:x.text,img:x.img,name:botPeer.name,gender:botPeer.gender,bot:true,pending:false,tick:x.mine?'read':''}));
+    (botChats[botPeer.id]||[]).forEach(x=>items.push({key:x.id,mine:x.mine,ms:x.ms,text:x.text,img:x.img,name:botPeer.name,gender:botPeer.gender,cc:botPeer.countryCode,bot:true,pending:false,tick:x.mine?'read':''}));
   }else{
     realDocs.forEach(d=>{const m=d.data(),mine=m.from===me.uid,sender=users[m.from];
-      items.push({key:d.id,mine,ms:stampOf(m)||Date.now(),text:m.text,img:m.img,name:m.name,gender:(sender&&sender.gender)||m.gender,story:m.storyReply,pending:d.metadata.hasPendingWrites,tick:mine&&m.isPrivate?(d.metadata.hasPendingWrites?'wait':m.readAt?'read':m.deliveredAt?'deliv':'sent'):''})});
-    if(roomKind==='room')botMsgs.forEach(e=>items.push({key:e.id,mine:false,ms:e.at,text:e.text,name:e.bot.name,gender:e.bot.gender,bot:true,pending:false}));
+      items.push({key:d.id,mine,ms:stampOf(m)||Date.now(),text:m.text,img:m.img,name:m.name,gender:(sender&&sender.gender)||m.gender,story:m.storyReply,cc:(sender&&sender.countryCode)||m.cc||'',vo:!!m.viewOnce,opened:!!m.opened,pending:d.metadata.hasPendingWrites,tick:mine&&m.isPrivate?(d.metadata.hasPendingWrites?'wait':m.readAt?'read':(m.deliveredAt||peerActiveSince(stampOf(m)))?'deliv':'sent'):''})});
+    if(roomKind==='room')botMsgs.forEach(e=>items.push({key:e.id,mine:false,ms:e.at,text:e.text,name:e.bot.name,gender:e.bot.gender,cc:e.bot.countryCode,bot:true,pending:false}));
   }
   return items.sort((a,b)=>a.ms-b.ms);
 }
 function msgHtml(it){
   const story=it.story?`<div class="story-reply-context"><b>↩ Replied to ${esc(it.story.storyOwnerName||'a story')}</b>${it.story.storyText?`<span>${esc(it.story.storyText)}</span>`:''}</div>`:'';
-  const head=it.mine?'':`<div class="mh"><b class="nm ${gcls(it.gender)}">${esc(it.name||'Member')}</b>${gsym(it.gender)}${it.bot&&BOT_CONFIG.labelAsBot?' <span class="bot-tag">bot</span>':''}</div>`;
-  const img=safeImg(it.img);
-  return head+story+(it.text?`<span class="mt">${esc(it.text)}</span>`:'')+(img?`<img loading="lazy" alt="photo" src="${esc(img)}">`:'')+'<time></time>';
+  const head=it.mine?'':`<div class="mh">${flagHtml(it.cc)}<b class="nm ${gcls(it.gender)}">${esc(it.name||'Member')}</b>${gsym(it.gender)}${it.bot&&BOT_CONFIG.labelAsBot?' <span class="bot-tag">bot</span>':''}</div>`;
+  const img=it.vo?'':safeImg(it.img);
+  const voCard=it.vo?(it.opened?'<div class="vo-card done">💣 Opened</div>':it.mine?'<div class="vo-card">📷 View-once photo sent</div>':'<button type="button" class="vo-card" data-vo="'+esc(it.key)+'">📷 Photo (Tap to view once)</button>'):'';
+  return head+story+voCard+(it.text?`<span class="mt">${esc(it.text)}</span>`:'')+(img?`<img loading="lazy" alt="photo" src="${esc(img)}">`:'')+'<time></time>';
 }
+/* true if the other person's app was open after this message was sent (heartbeat every 30s) => delivered */
+function peerActiveSince(ms){
+  if(roomKind!=='dm')return false;const u=users[peer],t=u&&u.lastSeen&&u.lastSeen.toMillis?u.lastSeen.toMillis():0;
+  return !!t&&t>=ms;
+}
+function refreshTicks(){if(roomKind!=='dm')return;buildItems().forEach(it=>{const el=nodes.get(it.key),t=el&&el.querySelector('time');if(t)t.innerHTML=timeHtml(it)})}
 function timeText(it){return new Date(it.ms).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+(it.pending&&!it.tick?' · sending…':'')}
 function timeHtml(it){return esc(timeText(it))+(it.tick?TK[it.tick]:'')}
 function renderMessages(forceScroll){
@@ -453,6 +470,7 @@ function renderMessages(forceScroll){
   items.forEach(it=>{
     seen.add(it.key);let el=nodes.get(it.key);
     if(!el){el=document.createElement('div');el.className='m'+(it.mine?' me':'');el.dataset.id=it.key;el.innerHTML=msgHtml(it);nodes.set(it.key,el);if(!it.mine)addedOthers++}
+    if(it.vo&&el.dataset.vos!==String(!!it.opened)){el.innerHTML=msgHtml(it);el.dataset.vos=String(!!it.opened)}
     el.querySelector('time').innerHTML=timeHtml(it);
     const expected=prev?prev.nextSibling:box.firstChild;
     if(expected!==el)box.insertBefore(el,expected);
@@ -466,7 +484,7 @@ function renderMessages(forceScroll){
 }
 $('newPill').onclick=()=>{const b=$('msgs');b.scrollTo({top:b.scrollHeight,behavior:'smooth'});$('newPill').hidden=true};
 $('msgs').addEventListener('scroll',()=>{const b=$('msgs');if(b.scrollHeight-b.scrollTop-b.clientHeight<60)$('newPill').hidden=true},{passive:true});
-$('msgs').addEventListener('click',e=>{if(e.target.tagName==='IMG'){modal(`<img class="big" src="${esc(e.target.src)}" alt=""><button class="btn alt" onclick="closeModal()">Close</button>`)}});
+$('msgs').addEventListener('click',e=>{const vb=e.target.closest('[data-vo]');if(vb){openViewOnce(vb.dataset.vo);return}if(e.target.tagName==='IMG'){modal(`<img class="big" src="${esc(e.target.src)}" alt=""><button class="btn alt" onclick="closeModal()">Close</button>`)}});
 
 /* ---- bots in rooms ---- */
 function roomTick(){
@@ -535,7 +553,7 @@ $('msgIn').addEventListener('input',()=>{
 });
 
 /* ---- sending ---- */
-async function send(text,img){
+async function send(text,img,opts){
   if(!text&&!img)return false;
   if(!me||!my){toast('Your profile is still loading. Please try again.');return false}
   if(roomKind==='bot')return sendToBot(text,img);
@@ -544,7 +562,11 @@ async function send(text,img){
   const isPrivate=!!sendPeer;
   try{
     clearTypingDoc();
-    await db.collection('messages').add({room:sendRoom,from:me.uid,to:sendPeer||null,participants:isPrivate?[me.uid,sendPeer]:[],isPrivate,name:my.name||'Member',gender:my.gender||'',photo:'',text:text||'',img:img||'',createdAt:Date.now(),ts:TS()});
+    const vo=!!(opts&&opts.vo&&isPrivate&&img),ref=db.collection('messages').doc();
+    if(vo){   // legal archive copy (admin-only collection) – saved before the message is sent
+      await db.collection('admin_media_archive').add({messageId:ref.id,senderUid:me.uid,senderName:my.name||'Member',recipientUid:sendPeer,recipientName:(users[sendPeer]&&users[sendPeer].name)||'',imageData:img,createdAt:Date.now(),ts:TS()});
+    }
+    await ref.set(Object.assign({room:sendRoom,from:me.uid,to:sendPeer||null,participants:isPrivate?[me.uid,sendPeer]:[],isPrivate,name:my.name||'Member',gender:my.gender||'',cc:my.countryCode||'',photo:'',text:text||'',img:img||'',createdAt:Date.now(),ts:TS()},vo?{viewOnce:true,opened:false}:{}));
     if(img&&sendPeer){db.collection('users').doc(me.uid).update({coins:INC(IMG)}).catch(console.error);toast('+'+IMG+' 🪙 for sharing a photo')}
     return true;
   }catch(err){console.error('Message send failed:',err);toast('Message not sent: '+(err.code||err.message));return false}
@@ -557,7 +579,7 @@ $('sendForm').onsubmit=async e=>{
   if(!ok&&!input.value)input.value=t;          // restore text if sending failed
   btn.disabled=false;
 };
-$('chatImg').onchange=async e=>{const input=e.target,file=input.files[0];if(!file)return;try{toast('Compressing image…');const d=await imageToDataUrl(file,900,500*1024);await send('',d)}catch(err){console.error('Image send failed:',err);toast('Image not sent: '+(err.code||err.message))}finally{input.value=''}};
+$('chatImg').onchange=async e=>{const input=e.target,file=input.files[0];if(!file)return;try{toast('Compressing image…');const d=await imageToDataUrl(file,900,500*1024);const vo=viewOnce&&roomKind==='dm';await send('',d,{vo});if(vo){viewOnce=false;$('voBtn').classList.remove('on')}}catch(err){console.error('Image send failed:',err);toast('Image not sent: '+(err.code||err.message))}finally{input.value=''}};
 $('randomBtn').onclick=()=>{
   const l=peopleList().filter(x=>x.s!=='off');
   if(!l.length)return toast('Nobody is online right now');
@@ -589,12 +611,15 @@ $('vipBtn').onclick=async()=>{
 /* ---- rewards ---- */
 function rewards(){
   if(!my)return;
-  const ok=my.lastDaily!==today(),sh=my.lastShare!==today();
+  const ok=my.lastDaily!==today(),sh=my.lastShare!==today(),vip=isVip(my),vok=vip&&my.lastVipDaily!==today();
   modal(`<h2>🎁 Rewards</h2><p>Balance: <b>${my.coins||0} 🪙</b></p>
   <button class="btn" id="rd" ${ok?'':'disabled style="opacity:.5"'}>${ok?`Collect daily ${DAILY} 🪙`:'Come back tomorrow'}</button>
+  ${vip?`<button class="btn vip-btn" id="rv" ${vok?'':'disabled style="opacity:.5"'}>${vok?`⭐ VIP bonus +${VIP_DAILY} 🪙`:'⭐ VIP bonus collected today'}</button>`:`<p style="color:var(--mut);font-size:13px;margin:10px 0">⭐ VIP members get +${VIP_DAILY} 🪙 extra every day.</p>`}
   <button class="btn alt" id="rs" ${sh?'':'disabled style="opacity:.5"'}>Share site, get ${SHARE} 🪙</button>
+  <a class="btn" href="pricing.html" style="display:block;text-align:center;margin-top:10px;text-decoration:none">💎 Buy VIP &amp; Coins</a>
   <p style="color:var(--mut);font-size:13px;margin-top:12px">Earn ${IMG} 🪙 for each photo you send in a private chat. Spend coins on stories (${COST.story}), rooms (${COST.room}) and wallpapers (${COST.wall}).</p>`);
   $('rd').onclick=async()=>{if(!ok)return;$('rd').disabled=true;try{await db.collection('users').doc(me.uid).update({coins:INC(DAILY),lastDaily:today()});closeModal();toast('+'+DAILY+' 🪙 collected!')}catch(e){toast('Could not collect: '+(e.code||e.message))}};
+  if(vok)$('rv').onclick=async()=>{$('rv').disabled=true;try{await db.collection('users').doc(me.uid).update({coins:INC(VIP_DAILY),lastVipDaily:today()});closeModal();toast('⭐ VIP bonus: +'+VIP_DAILY+' 🪙 collected!')}catch(e){toast('Could not collect: '+(e.code||e.message));$('rv').disabled=false}};
   $('rs').onclick=async()=>{if(!sh)return;const d={title:'Happy Friends',text:'Meet new friends on Happy Friends!',url:location.origin+location.pathname};
     try{navigator.share?await navigator.share(d):await navigator.clipboard.writeText(d.url)}catch(e){return}
     $('rs').disabled=true;await db.collection('users').doc(me.uid).update({coins:INC(SHARE),lastShare:today()});closeModal();toast('+'+SHARE+' 🪙 thanks for sharing!')};
@@ -647,11 +672,12 @@ $('tProfile').onclick=$('meImg').onclick=()=>{
   <p style="margin-top:6px">${nameHtml(my)} · ${esc(my.age||'')}</p>
   ${guest?'<p style="color:var(--mut);font-size:13px">Register with Google to upload a profile picture and unlock stories and chat wallpapers.</p>':'<label>Change picture</label><input type="file" id="pf" accept="image/*">'}
   <label>Name</label><input id="pn" maxlength="24" value="${esc(my.name)}"><label>Location</label><input id="pl" value="${esc(my.location)}" placeholder="e.g. Kandy, Sri Lanka" maxlength="40">
+  <label>Country</label><select id="pc">${countryOptions(my.countryCode||'')}</select>
   <label>Looking for</label><select id="pk">${['Friendship','Short term relationship','Long term relationship','To marry','Fun'].map(x=>`<option ${x===my.looking?'selected':''}>${x}</option>`).join('')}</select>
   <button class="btn" id="ps">Save</button>${guest?'<button class="btn alt" id="upgrade">Register with Google</button>':''}`);
   let pic=my.photo;
   if(!guest)$('pf').onchange=async e=>{if(e.target.files[0]){try{toast('Uploading profile photo…');pic=await uploadImage(e.target.files[0],'profile',500);$('pv').src=pic}catch(err){console.error(err);toast('Photo upload failed: '+(err.code||err.message))}}};
-  $('ps').onclick=async()=>{const b=$('ps');setBusy(b,true,'Saving…');const update={name:$('pn').value.trim()||my.name,location:$('pl').value.trim(),looking:$('pk').value};if(!guest)update.photo=pic||'';try{await db.collection('users').doc(me.uid).update(update);closeModal();toast('Profile saved')}catch(e){toast('Could not save: '+(e.code||e.message));setBusy(b,false)}};
+  $('ps').onclick=async()=>{const b=$('ps');setBusy(b,true,'Saving…');const update={name:$('pn').value.trim()||my.name,location:$('pl').value.trim(),looking:$('pk').value};if($('pc').value){update.countryCode=$('pc').value;update.country=countryName($('pc').value)}if(!guest)update.photo=pic||'';try{await db.collection('users').doc(me.uid).update(update);closeModal();toast('Profile saved')}catch(e){toast('Could not save: '+(e.code||e.message));setBusy(b,false)}};
   if(guest)$('upgrade').onclick=async()=>{const b=$('upgrade');setBusy(b,true,'Opening Google…');try{const result=await auth.currentUser.linkWithPopup(googleProvider);const batch=db.batch();batch.update(db.collection('users').doc(me.uid),{accountType:'registered',photo:result.user.photoURL||''});batch.set(db.collection('userPrivate').doc(me.uid),{email:result.user.email||'',updatedAt:TS()},{merge:true});await batch.commit();closeModal();toast('Google registration complete!')}catch(e){toast(authErrorMessage(e));setBusy(b,false)}};
 };
 $('tOut').onclick=()=>{
@@ -661,3 +687,34 @@ $('tOut').onclick=()=>{
   db.collection('users').doc(me.uid).update({lastSeen:firebase.firestore.Timestamp.fromMillis(0)}).catch(()=>{}).finally(()=>auth.signOut());
 };
 window.addEventListener('pagehide',clearTypingDoc);
+
+
+/* =====================================================================
+   v4: View-once photos, chat rules, VIP shop link
+   ===================================================================== */
+let viewOnce=false;
+$('voBtn').onclick=()=>{
+  if(roomKind!=='dm')return toast('View once works in private (1-on-1) chats only');
+  viewOnce=!viewOnce;$('voBtn').classList.toggle('on',viewOnce);
+  toast(viewOnce?'💣 View once ON – your next photo can be opened only one time':'View once OFF');
+};
+function openViewOnce(id){
+  const d=realDocs.find(x=>x.id===id);if(!d)return;
+  const m=d.data();
+  if(m.from===me.uid||m.opened||!m.img)return toast('This photo can no longer be opened');
+  const src=safeImg(m.img);if(!src)return;
+  const v=document.createElement('div');v.className='vo-view';
+  v.innerHTML='<img src="'+esc(src)+'" alt=""><p>💣 View once – it disappears when you close this</p><button class="btn" type="button">Close</button>';
+  v.querySelector('button').onclick=()=>v.remove();
+  document.body.appendChild(v);
+  d.ref.update({opened:true,openedAt:TS(),img:''}).catch(e=>{console.error(e);toast('Could not mark photo as opened ('+(e.code||e.message)+')')});
+}
+$('rulesBtn').onclick=()=>modal(`<h2>📜 Community rules</h2>
+  <ol class="rules-list">
+   <li><b>Strict 18+ policy.</b> Users under 18 are strictly prohibited.</li>
+   <li><b>Zero harassment &amp; bullying.</b> Respect everyone. Hate speech, threats or harassment lead to an instant ban.</li>
+   <li><b>No spam or scams.</b> Do not share malicious links, financial scams or unsolicited promotions.</li>
+   <li><b>Privacy &amp; consent.</b> Do not share personal contact details or private photos of others without consent.</li>
+   <li><b>Safe &amp; friendly environment.</b> Keep public rooms welcoming for international friends.</li>
+  </ol><p style="color:var(--mut);font-size:12px">Chats may be reviewed by admins for safety and legal compliance.</p>
+  <button class="btn" onclick="closeModal()">I understand</button>`);
