@@ -3,25 +3,48 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Happy Friends - Online Friends, Free Chat & Dating Community</title>
-<meta name="description" content="Join Happy Friends to meet new online friends, enjoy free 1-on-1 private chats, public chatrooms, and connect with people worldwide.">
-<meta name="keywords" content="happy friends, online friends, free chat, dating, sinhala chat, private chat">
-<meta property="og:title" content="Happy Friends - Online Friends & Free Chat">
-<meta property="og:description" content="Connect with new online friends, chat in public rooms, or start a private 1-on-1 chat for free.">
-<meta property="og:url" content="https://happyfriends.online/">
+<title>Happy Friends – Online Friends, Dating Community &amp; Sri Lankan Chat Rooms</title>
+<meta name="description" content="Happy Friends is a free online friends and dating community with Sri Lankan chat rooms, private messages, random chat, 24-hour stories and daily coin rewards. Meet new people, make friends or find a relationship. 18+ only.">
+<meta name="keywords" content="online friends, free chat, international dating, global chat rooms, meet new people online, anonymous chat, 1-on-1 private chat, Sri Lanka chat, Sinhala chat, free online dating, dating community, Sri Lankan friends, Sri Lanka chat rooms, free online chat, make new friends online, online dating Sri Lanka, Tamil chat, random chat, chat with strangers, chat rooms 18+, friendship, long term relationship, find a partner, marriage, video-free chat, Happy Friends">
+<meta name="author" content="Happy Friends">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="googlebot" content="index, follow">
+<meta name="geo.region" content="LK">
+<meta name="geo.placename" content="Sri Lanka">
+<meta name="rating" content="adult">
+<link rel="canonical" href="https://happyfriends.happyfriends.online/">
+<!-- Google Search Console: replace the code below with the one Google gives you (HTML tag method) -->
+<meta name="google-site-verification" content="PASTE_YOUR_GOOGLE_VERIFICATION_CODE_HERE">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="Happy Friends">
+<meta property="og:title" content="Happy Friends – Online Friends, Dating Community &amp; Sri Lankan Chat Rooms">
+<meta property="og:description" content="Free chat rooms, private messages, random chat and stories. Make Sri Lankan and international friends online. 18+ only.">
+<meta property="og:url" content="https://happyfriends.happyfriends.online/">
+<meta property="og:image" content="https://happyfriends.happyfriends.online/logo.svg">
+<meta property="og:locale" content="en_LK">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://happyfriends.online/logo.svg">
+<meta property="og:image:alt" content="Happy Friends logo">
+<link rel="alternate" hreflang="en" href="https://happyfriends.online/">
+<link rel="alternate" hreflang="x-default" href="https://happyfriends.online/">
+<meta name="twitter:title" content="Happy Friends – Online Friends &amp; Chat Rooms">
+<meta name="twitter:description" content="Meet new friends, chat in public rooms or privately, share stories. Free. 18+ only.">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"WebSite","name":"Happy Friends","url":"https://happyfriends.happyfriends.online/","description":"Online friends and dating community with Sri Lankan chat rooms.","inLanguage":"en","keywords":"online friends, dating community, chat rooms, Sri Lankan friends"},
+{"@type":"WebApplication","name":"Happy Friends","url":"https://happyfriends.online/","applicationCategory":"SocialNetworkingApplication","operatingSystem":"Any (Android, iOS, Web)","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Free international chat rooms, private 1-on-1 chat, random chat, stories and an online friends and dating community."},
+{"@type":"Organization","name":"Happy Friends","url":"https://happyfriends.happyfriends.online/","logo":"https://happyfriends.happyfriends.online/logo.svg","areaServed":"LK"},
+{"@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"Is Happy Friends free?","acceptedAnswer":{"@type":"Answer","text":"Yes. You can join free with Google or as a guest, chat in public rooms and collect free daily coins."}},
+{"@type":"Question","name":"Who can join Happy Friends?","acceptedAnswer":{"@type":"Answer","text":"Anyone aged 18 or older. Under-18s are not allowed to register."}},
+{"@type":"Question","name":"How do I make friends online for free?","acceptedAnswer":{"@type":"Answer","text":"Sign in with Google or join as a guest, pick your country, join a public chat room and say hi. Users from your own country are shown first."}},
+{"@type":"Question","name":"Is private 1-on-1 chat free?","acceptedAnswer":{"@type":"Answer","text":"Yes. You can message any online member privately for free and send photos, including view-once photos."}},
+{"@type":"Question","name":"Is Happy Friends an international dating site?","acceptedAnswer":{"@type":"Answer","text":"It is a global friendship and dating community. Choose friendship, a short or long term relationship, marriage or fun, and chat with people from many countries."}},
+{"@type":"Question","name":"Can I meet Sri Lankan friends here?","acceptedAnswer":{"@type":"Answer","text":"Yes. Join the public chat rooms, see who is online, send private messages or try random chat to meet Sri Lankan and international friends."}}
+]}]}
+</script>
 <meta name="theme-color" content="#ff5d8f">
 <link rel="icon" type="image/svg+xml" href="logo.svg?v=2">
-<link rel="icon" type="image/svg+xml" href="https://happyfriends.online/logo.svg">
-<link rel="apple-touch-icon" href="https://happyfriends.online/logo.svg">
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "WebSite",
-  "name": "Happy Friends",
-  "url": "https://happyfriends.online/"
-}
-</script>
 <!-- warm up connections so the Google popup and Firebase respond faster -->
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://apis.google.com" crossorigin>
@@ -43,10 +66,28 @@
   </header>
   <div class="hero">
     <h1>Say hi. Make a <span class="rot">friend</span> today.</h1>
-    <p>Public chat rooms, private messages, 24-hour stories and daily coin rewards. Free to join with Google. 18+ only.</p>
+    <p>Meet new people online in free international chat rooms, private 1-on-1 chat and random chat. Make friends, find a dating partner, share 24-hour stories and collect daily coins. 18+ only.</p>
     <button class="btn big pulse" data-login>Continue with Google</button><p id="authStatus" hidden style="margin:12px auto;color:var(--mut);font-size:13px">Connecting to Happy Friends…</p><div style="margin-top:12px"><button class="btn ghost" id="guestJoin">Join as Guest</button></div>
     <div class="bubbles"><i>👋</i><i>💬</i><i>🎁</i><i>📸</i><i>😊</i></div>
   </div>
+
+  <section class="seo" aria-labelledby="seoH">
+    <h2 id="seoH">Meet new people online – free international chat rooms &amp; dating community</h2>
+    <p>Happy Friends is a free online friends community with global chat rooms, private 1-on-1 chat and random chat. Whether you want Sri Lankan friends, international dating, a long term relationship or just friendly conversation, you can meet people online right now. See members from your own country first.</p>
+    <div class="seo-grid">
+      <article><h3>💬 Global chat rooms</h3><p>Join public and custom chat rooms, see who is online with green, orange and black status dots and chat with friends from Sri Lanka, India, the UK, the USA, the Middle East and beyond.</p></article>
+      <article><h3>❤️ Dating community</h3><p>Choose what you are looking for: friendship, short term, long term, marriage or fun. Add your country and location and find people with the same goals.</p></article>
+      <article><h3>🔒 Private &amp; anonymous chat</h3><p>Send private 1-on-1 messages with read receipts and view-once photos. Join as a guest with just a nickname.</p></article>
+      <article><h3>⭐ VIP &amp; rewards</h3><p>Collect daily coins, post 24-hour stories and upgrade to VIP for a golden profile ring and bonus coins. See <a href="pricing.html">pricing</a>.</p></article>
+    </div>
+    <h2>Frequently asked questions</h2>
+    <div class="faq">
+      <details><summary>How do I make friends online for free?</summary><p>Sign in with Google or join as a guest, choose your country, enter a public chat room and say hi. Online members from your country appear at the top of the list.</p></details>
+      <details><summary>Is it an international dating site?</summary><p>Happy Friends is a global friendship and dating community. You can look for friendship, a short or long term relationship, marriage or fun with people from many countries.</p></details>
+      <details><summary>Are private chat rooms free?</summary><p>Yes. Private 1-on-1 chat, random chat and public rooms are free. Optional VIP and coin packs are available on the pricing page.</p></details>
+      <details><summary>Who can join?</summary><p>Only adults aged 18 and over. Accounts that break the community rules are suspended.</p></details>
+    </div>
+  </section>
 </section>
 
 <!-- APP -->
@@ -57,7 +98,7 @@
     <div class="row">
       <a class="btn ghost sm" href="freesites.html">Free Websites</a><button class="btn vip-btn sm" id="vipBtn">⭐ Get VIP</button>
       <button class="coin" id="coinBtn">🪙 <b id="coins">0</b></button>
-      <button class="icon" id="themeBtn2">🌙</button>
+      <button class="icon" id="themeBtn2">🌙</button><button class="icon" id="rulesBtn" title="Chat rules">📜 Rules</button>
       <span class="avw" id="meWrap"><img id="meImg" class="av" alt="me"></span>
     </div>
   </header>
@@ -76,7 +117,7 @@
       <div id="msgsWrap"><div id="msgs" aria-live="polite"></div><button type="button" id="newPill" class="new-pill" hidden>↓ New messages</button></div>
       <div id="typing" class="typing" hidden></div>
       <form id="sendForm">
-        <label class="icon">📷<input type="file" id="chatImg" accept="image/*" hidden></label>
+        <label class="icon">📷<input type="file" id="chatImg" accept="image/*" hidden></label><button type="button" class="icon" id="voBtn" title="View once (1×)">1×</button>
         <input id="msgIn" placeholder="Type a message…" autocomplete="off" maxlength="1000">
         <button class="btn" id="sendBtn" type="submit">Send</button>
       </form>
@@ -88,7 +129,7 @@
 
 <footer id="siteFooter" class="site-footer">
   <div class="footer-brand"><a class="logo footer-logo" href="index.html"><img src="logo.svg?v=2" width="54" height="54" alt=""><span class="brand-word"><span>Happy</span><b>Friends</b></span></a><small>© <span id="footerYear"></span> Happy Friends</small></div>
-  <div class="footer-right"><p>Meet new people, make friends and stay connected with Happy Friends.</p><nav id="socialLinks" class="social-links" aria-label="Social media"></nav></div>
+  <div class="footer-right"><p>Happy Friends – free online friends, international dating community and global chat rooms. Meet new people, chat privately and make friends from Sri Lanka and around the world.</p><nav class="footer-links" aria-label="Site"><a href="pricing.html">Pricing / VIP</a><a href="freesites.html">Free Websites</a><a href="index.html">Home</a></nav><nav id="socialLinks" class="social-links" aria-label="Social media"></nav></div>
 </footer>
 
 <div id="loader" hidden><div class="spin"></div><p id="loaderText">Loading…</p></div>
@@ -99,6 +140,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="countries.js"></script>
 <script src="bot-names.js"></script>
 <script src="bots.js"></script>
 <script src="app.js"></script>
