@@ -8,7 +8,7 @@ $('passLogin').onclick=()=>{if($('adminPass').value!==ADMIN_PASSWORD){$('loginMs
 $('go').onclick=()=>{if(!passwordPassed)return alert('Enter the admin password first.');auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>alert(e.message))};
 $('out').onclick=()=>auth.signOut();
 auth.onAuthStateChanged(u=>{if(!u){$('login').hidden=false;$('panel').hidden=true;started=false;return}if(!passwordPassed||!ADMIN_EMAILS.includes((u.email||'').toLowerCase())){alert('Admin password and authorized Google account are both required.');auth.signOut();return}$('login').hidden=true;$('panel').hidden=false;$('who').textContent=u.email;if(!started){started=true;init()}});
-document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));b.classList.add('on');['users','chats','media','sites','social','payments','archive'].forEach(id=>$(id).hidden=id!==b.dataset.t)});
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));b.classList.add('on');['users','chats','media','sites','social','controls','payments','archive'].forEach(id=>$(id).hidden=id!==b.dataset.t)});
 function vipActive(u){return (u.vipUntil||0)>Date.now()}function status(u){const t=u.lastSeen?.toMillis?.()||0;if(Date.now()-t>90000)return'⚫ offline';return u.away?'🟠 away':'🟢 online'}
 function render(){const q=$('q').value.toLowerCase();$('ub').innerHTML=Object.entries(users).filter(([id,u])=>((u.name||'')+' '+(u.email||emails[id]||'')).toLowerCase().includes(q)).map(([id,u])=>`<tr><td>${esc(u.name)} ${vipActive(u)?'<span class="vip">VIP</span>':''}</td><td>${esc(u.age??'—')}</td><td>${esc(u.gender||'—')}</td><td>${esc(u.accountType||'registered')}</td><td>${esc(u.email||emails[id]||'Guest')}</td><td>${u.coins||0}</td><td>${vipActive(u)?new Date(u.vipUntil).toLocaleString():'—'}</td><td>${status(u)}</td><td><button data-vip="${id}">${vipActive(u)?'Remove VIP':'Give VIP'}</button> <button class="${u.suspended?'act':'sus'}" data-ban="${id}">${u.suspended?'Unsuspend':'Suspend'}</button></td></tr>`).join('');$('uc').textContent=Object.keys(users).length;
 document.querySelectorAll('[data-vip]').forEach(b=>b.onclick=async()=>{const id=b.dataset.vip,u=users[id];await db.collection('users').doc(id).update({vipUntil:vipActive(u)?0:Date.now()+365*24*60*60*1000,vipBy:'admin'});});document.querySelectorAll('[data-ban]').forEach(b=>b.onclick=()=>db.collection('users').doc(b.dataset.ban).update({suspended:!users[b.dataset.ban].suspended}));}
@@ -28,6 +28,14 @@ function renderMedia(){const all=[...(window.hfChats||[]),...(window.hfStories||
 const PLAN_GRANT={vip_week:{days:7},vip_month:{days:30},vip_year:{days:365},coins_150:{coins:150},coins_500:{coins:500},coins_1500:{coins:1500}};
 window.hfPay={};
 function initExtra(){
+  const ref=db.collection('siteSettings').doc('platform');
+  ref.onSnapshot(s=>{const d=Object.assign({botsOff:false,showOfflineMembers:false},s.exists?s.data():{});
+    $('botsOffToggle').checked=!!d.botsOff;$('offlineToggle').checked=!!d.showOfflineMembers;
+    $('ctlState').textContent='Bots: '+(d.botsOff?'OFF (disabled)':'ON (active)')+'  ·  Offline non-VIP members: '+(d.showOfflineMembers?'visible':'hidden');
+  },e=>console.warn('settings:',e.code||e.message));
+  const save=(k,v)=>ref.set({[k]:v,updatedAt:firebase.firestore.FieldValue.serverTimestamp(),updatedBy:(auth.currentUser||{}).email||''},{merge:true}).catch(e=>alert('Could not save: '+(e.code||e.message)));
+  $('botsOffToggle').onchange=e=>save('botsOff',e.target.checked);
+  $('offlineToggle').onchange=e=>save('showOfflineMembers',e.target.checked);
   db.collection('payments').orderBy('ts','desc').limit(300).onSnapshot(s=>{
     window.hfPay={};
     $('payRows').innerHTML=s.docs.map(d=>{const p=d.data();window.hfPay[d.id]=p;const t=p.ts&&p.ts.toDate?p.ts.toDate().toLocaleString():'';
