@@ -309,9 +309,9 @@ $('rooms').onclick=e=>{const el=e.target.closest('[data-r]');if(!el)return;openR
    ===================================================================== */
 function peopleList(){
   const cc=(my&&my.countryCode)||'';
-  const real=Object.entries(users).filter(([id,u])=>id!==me.uid&&!u.suspended).map(([id,u])=>({id,u,s:status(u),bot:false})).filter(x=>x.s!=='off'||isVip(x.u));
+  const real=Object.entries(users).filter(([id,u])=>id!==me.uid&&!u.suspended).map(([id,u])=>({id,u,s:status(u),bot:false})).filter(x=>x.s!=='off'||isVip(x.u)||platform.showOfflineMembers);
   const bots=botsOnlineAt().map(b=>({id:b.id,u:b,s:'on',bot:true}));
-  const vip=x=>Number(isVip(x.u)),same=x=>Number(!!cc&&x.u.countryCode===cc),grp=x=>x.s==='off'?1:0;
+  const vip=x=>Number(isVip(x.u)),same=x=>Number(!!cc&&x.u.countryCode===cc),grp=x=>x.s==='off'?(isVip(x.u)?1:2):0;
   return [...real,...bots].sort((a,b)=>grp(a)-grp(b)||same(b)-same(a)||vip(b)-vip(a)||'on away off'.indexOf(a.s)-'on away off'.indexOf(b.s));
 }
 function renderUsers(){
@@ -320,7 +320,7 @@ function renderUsers(){
   const h=$('onlineCount');if(h)h.textContent=online+' online';
   $('users').innerHTML=l.map(({id,u,s,bot})=>{
     const unread=bot?0:(unreadByRoom[dmId(id)]||0);
-    return `<div class="u ${gcls(u.gender)}" ${bot?'data-bot':'data-u'}="${esc(id)}">${avHtml(u,'ring '+gcls(u.gender))}<div><b>${nameHtml(u)} ${(u.vipUntil||0)>Date.now()?'<span class="vip-badge">VIP</span>':''}</b><small>${s==='off'?'<span class="offvip">Offline VIP</span> ':''}${esc(u.location||'')}${u.location&&u.looking?' · ':''}${esc(u.looking||'')}</small></div>${unread?`<span class="badge">${unread>99?'99+':unread}</span>`:''}<i class="dot ${s}"></i></div>`;
+    return `<div class="u ${gcls(u.gender)}" ${bot?'data-bot':'data-u'}="${esc(id)}">${avHtml(u,'ring '+gcls(u.gender))}<div><b>${nameHtml(u)} ${(u.vipUntil||0)>Date.now()?'<span class="vip-badge">VIP</span>':''}</b><small>${s==='off'&&isVip(u)?'<span class="offvip">Offline VIP</span> ':''}${esc(u.location||'')}${u.location&&u.looking?' · ':''}${esc(u.looking||'')}</small></div>${unread?`<span class="badge">${unread>99?'99+':unread}</span>`:''}<i class="dot ${s}"></i></div>`;
   }).join('')||'<small>No users yet</small>';
 }
 $('users').onclick=e=>{
@@ -510,11 +510,12 @@ function scheduleWelcome(){
     const bots=botsOnlineAt();if(!bots.length)return;
     const b=bots[Math.floor(Math.random()*bots.length)];
     botTypers.set(b.id,{name:b.name,until:Date.now()+2200});renderTyping();
-    welcomeTimers.push(setTimeout(()=>{if(room!=='public'||roomKind!=='room')return;botMsgs.push({id:'welcome_'+Date.now(),at:Date.now(),bot:b,text:botWelcomeText(my.name||'friend')});renderMessages(false)},2200));
+    welcomeTimers.push(setTimeout(()=>{if(room!=='public'||roomKind!=='room'||!BOT_CONFIG.enabled)return;botMsgs.push({id:'welcome_'+Date.now(),at:Date.now(),bot:b,text:botWelcomeText(my.name||'friend')});renderMessages(false)},2200));
   },5000+Math.random()*4000));
 }
 /* ---- 1-on-1 chat with a bot: local only, never saved to Firestore ---- */
 function botSay(b,text){
+  if(!BOT_CONFIG.enabled)return;
   if(!botChats[b.id])botChats[b.id]=[];
   botChats[b.id].push({id:'b'+Date.now()+Math.random(),mine:false,text,ms:Date.now()});
   if(roomKind==='bot'&&botPeer&&botPeer.id===b.id)renderMessages(false);
@@ -718,3 +719,25 @@ $('rulesBtn').onclick=()=>modal(`<h2>📜 Community rules</h2>
    <li><b>Safe &amp; friendly environment.</b> Keep public rooms welcoming for international friends.</li>
   </ol><p style="color:var(--mut);font-size:12px">Chats may be reviewed by admins for safety and legal compliance.</p>
   <button class="btn" onclick="closeModal()">I understand</button>`);
+
+
+/* =====================================================================
+   v4.2: PLATFORM CONTROLS (set by admin in Firestore: siteSettings/platform)
+     botsOff             true  -> every bot (profiles, room chatter, welcome, bot replies) is switched off
+     showOfflineMembers  true  -> offline NON-VIP members are listed; false -> only online users + VIPs
+   ===================================================================== */
+let platform={botsOff:false,showOfflineMembers:false};
+function applyPlatform(){
+  BOT_CONFIG.enabled=!platform.botsOff;
+  if(!my||!appStarted)return;                       // app not open yet: lists will use the flags when they render
+  if(platform.botsOff){
+    botMsgs=[];botTypers.clear();
+    if(roomKind==='bot'){openRoom({id:'public',kind:'room',title:'Public chat'});toast('Bots are switched off');return}
+    renderTyping();
+  }
+  rosterKey='';rosterWatch();renderUsers();paintRoomHead();
+  if(roomKind==='room')renderMessages(false);
+}
+db.collection('siteSettings').doc('platform').onSnapshot(
+  s=>{platform=Object.assign({botsOff:false,showOfflineMembers:false},s.exists?s.data():{});applyPlatform()},
+  e=>console.warn('Platform settings unavailable:',e.code||e.message));
