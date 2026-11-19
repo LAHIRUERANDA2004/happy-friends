@@ -24,3 +24,12 @@ td img{width:36px;height:36px;border-radius:50%;object-fit:cover}td .chat{max-wi
 .sw span{position:absolute;inset:0;background:#cfc8e6;border-radius:99px;transition:.25s}
 .sw span::before{content:"";position:absolute;left:3px;top:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:.25s}
 .sw input:checked+span{background:#ff5d8f}.sw input:checked+span::before{transform:translateX(24px)}
+
+/* v5 chat browser */
+.chat-tabs{display:flex;gap:8px;margin-bottom:12px}.chat-tabs button{margin:0;background:#e7e1fa;color:#2b2340}.chat-tabs button.on{background:#6c5ce7;color:#fff}
+.chat-split{display:grid;grid-template-columns:300px 1fr;gap:14px;align-items:start}
+.chat-split aside{background:#fff;border-radius:14px;padding:12px;max-height:70vh;overflow:auto}.chat-split aside input{max-width:100%}
+.thread{padding:10px;border-radius:10px;cursor:pointer;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid #f0ecfb}.thread:hover{background:#faf8ff}.thread.on{background:#ece8ff}
+.thread small{color:#7a7390;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-main h3{margin-bottom:4px}.chat-main .wrap{max-height:70vh;overflow:auto}
+@media(max-width:760px){.chat-split{grid-template-columns:1fr}}
