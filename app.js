@@ -122,6 +122,16 @@ const uploadImage=(file,folder,max=1200)=>imageToDataUrl(file,max,500*1024);
 async function spend(n){const ref=db.collection('users').doc(me.uid);try{await db.runTransaction(async t=>{const d=await t.get(ref);if((d.data().coins||0)<n)throw new Error('coins');t.update(ref,{coins:INC(-n)})});return true}catch(e){toast(e&&e.message==='coins'?'Not enough coins 🪙':'Could not complete: '+(e.code||e.message));return false}}
 function status(u){const t=u.lastSeen&&u.lastSeen.toMillis?u.lastSeen.toMillis():0;if(Date.now()-t>90000)return'off';return u.away?'away':'on'}
 const dmId=uid=>[me.uid,String(uid)].sort().join('_');
+/* v5: chat-log metadata so the admin panel can keep PUBLIC rooms and PRIVATE pairs separate.
+   public  -> chatType:'public',  roomId, roomName
+   private -> chatType:'private', pairKey (sorted uid pair), pairLabel "A & B's Chat" (same order every time) */
+function roomTitleOf(id){const r=[...DEFAULT_ROOMS,...customRooms].find(x=>x.id===id);return r?r.name:String(id)}
+function chatMeta(roomId,peerUid,peerName){
+  if(!peerUid)return{chatType:'public',roomId:String(roomId),roomName:roomTitleOf(roomId)};
+  const key=dmId(peerUid),ids=key.split('_'),mine=my&&my.name||'Member',theirs=peerName||(users[peerUid]&&users[peerUid].name)||'Member';
+  const nm=u=>u===me.uid?mine:theirs;
+  return{chatType:'private',pairKey:key,pairLabel:nm(ids[0])+' & '+nm(ids[1])+"'s Chat",fromName:mine,toName:theirs};
+}
 
 /* ---------- footer / social links ---------- */
 function renderSocialLinks(data){
@@ -567,7 +577,7 @@ async function send(text,img,opts){
     if(vo){   // legal archive copy (admin-only collection) – saved before the message is sent
       await db.collection('admin_media_archive').add({messageId:ref.id,senderUid:me.uid,senderName:my.name||'Member',recipientUid:sendPeer,recipientName:(users[sendPeer]&&users[sendPeer].name)||'',imageData:img,createdAt:Date.now(),ts:TS()});
     }
-    await ref.set(Object.assign({room:sendRoom,from:me.uid,to:sendPeer||null,participants:isPrivate?[me.uid,sendPeer]:[],isPrivate,name:my.name||'Member',gender:my.gender||'',cc:my.countryCode||'',photo:'',text:text||'',img:img||'',createdAt:Date.now(),ts:TS()},vo?{viewOnce:true,opened:false}:{}));
+    await ref.set(Object.assign({room:sendRoom,from:me.uid,to:sendPeer||null,participants:isPrivate?[me.uid,sendPeer]:[],isPrivate,name:my.name||'Member',gender:my.gender||'',cc:my.countryCode||'',photo:'',text:text||'',img:img||'',createdAt:Date.now(),ts:TS()},chatMeta(sendRoom,sendPeer),vo?{viewOnce:true,opened:false}:{}));
     if(img&&sendPeer){db.collection('users').doc(me.uid).update({coins:INC(IMG)}).catch(console.error);toast('+'+IMG+' 🪙 for sharing a photo')}
     return true;
   }catch(err){console.error('Message send failed:',err);toast('Message not sent: '+(err.code||err.message));return false}
@@ -645,7 +655,7 @@ async function openStory(x){
     ev.preventDefault();const input=$('storyReplyInput'),btn=$('storyReplyForm').querySelector('button'),reply=input.value.trim();
     if(!reply)return toast('Type a reply first');if(!my)return toast('Your profile is still loading');
     btn.disabled=true;
-    try{await db.collection('messages').add({room:dmId(x.uid),from:me.uid,to:x.uid,participants:[me.uid,x.uid],isPrivate:true,name:my.name||'Member',gender:my.gender||'',photo:'',text:reply,img:'',createdAt:Date.now(),ts:TS(),storyReply:{storyId:x.id,storyOwner:x.uid,storyOwnerName:x.name||'Member',storyText:x.text||''}});input.value='';closeModal();toast('Story reply sent to inbox 💌')}
+    try{await db.collection('messages').add({room:dmId(x.uid),from:me.uid,to:x.uid,participants:[me.uid,x.uid],isPrivate:true,name:my.name||'Member',gender:my.gender||'',photo:'',text:reply,img:'',createdAt:Date.now(),ts:TS(),...chatMeta(dmId(x.uid),x.uid,x.name),storyReply:{storyId:x.id,storyOwner:x.uid,storyOwnerName:x.name||'Member',storyText:x.text||''}});input.value='';closeModal();toast('Story reply sent to inbox 💌')}
     catch(err){console.error('Story reply failed:',err);toast('Reply not sent: '+(err.code||err.message))}finally{btn.disabled=false}
   };
 }
