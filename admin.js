@@ -95,16 +95,66 @@ function buildThreads(){
 }
 function renderChatList(){
   const list=buildThreads();
-  $('chatList').innerHTML=list.length?list.map(t=>`<div class="thread ${t.key===chatSel?'on':''}" data-k="${esc(t.key)}"><b>${esc(t.label)}</b><small>${t.count} recent msg${t.count===1?'':'s'}${t.last?' · '+new Date(t.last).toLocaleString():''}</small><small>${esc((t.preview||'').slice(0,60))}</small></div>`).join(''):'<p class="note">No chats yet.</p>';
+  $('chatList').innerHTML=list.length?list.map(t=>`<div class="thread ${t.key===chatSel?'on':''}" data-k="${esc(t.key)}"><b>${esc(t.label)}</b><small>${t.count} recent msg${t.count===1?'':'s'}${t.last?' · '+new Date(t.last).toLocaleString():''}</small><small>${esc((t.preview||'').slice(0,60))}</small>${chatMode==='private'?`<button class="mini-del" data-del-k="${esc(t.key)}" title="Delete chat history">🗑 Delete</button>`:''}</div>`).join(''):'<p class="note">No chats yet.</p>';
   $('chatList').querySelectorAll('[data-k]').forEach(el=>el.onclick=()=>{chatSel=el.dataset.k;openThread(chatSel);renderChatList()});
+  $('chatList').querySelectorAll('[data-del-k]').forEach(b=>b.onclick=e=>{e.stopPropagation();deleteThread(b.dataset.delK)});
 }
+const msOf=m=>m.ts&&m.ts.toMillis?m.ts.toMillis():(m.createdAt||0);
+function rowsHtml(msgs){return msgs.map(m=>`<tr><td>${msOf(m)?new Date(msOf(m)).toLocaleString():''}</td><td>${esc(m.name)}</td><td>${esc(m.text)}${m.img?`<img class="chat" src="${esc(safeImg(m.img))}">`:''}</td></tr>`).join('')||'<tr><td colspan="3" class="note">No messages in this chat yet.</td></tr>'}
 function openThread(key){
   if(threadUnsub){threadUnsub();threadUnsub=null}
+  $('chatWarn').hidden=true;$('delThread').hidden=!(key&&chatMode==='private');
   if(!key){$('chatTitle').textContent='Select a chat';$('chatSub').textContent='';$('cb').innerHTML='';return}
   const t=buildThreads().find(x=>x.key===key);
   $('chatTitle').textContent=t?t.label:key;
   $('chatSub').textContent=chatMode==='private'?'Private 1-on-1 thread (latest 500 messages)':'Public room (latest 500 messages)';
-  threadUnsub=db.collection('messages').where('room','==',key).orderBy('ts','desc').limit(500).onSnapshot(s=>{
-    $('cb').innerHTML=s.docs.map(d=>d.data()).reverse().map(m=>`<tr><td>${m.ts?m.ts.toDate().toLocaleString():''}</td><td>${esc(m.name)}</td><td>${esc(m.text)}${m.img?`<img class="chat" src="${esc(safeImg(m.img))}">`:''}</td></tr>`).join('')||'<tr><td colspan="3" class="note">No messages in this chat yet.</td></tr>';
-  },e=>{$('cb').innerHTML='<tr><td colspan="3">Could not load: '+esc(e.code||e.message)+'</td></tr>'});
+  const col=db.collection('messages');
+  // 1) normal query: needs composite index room ASC + ts (see firestore.indexes.json)
+  threadUnsub=col.where('room','==',key).orderBy('ts','desc').limit(500).onSnapshot(s=>{
+    $('cb').innerHTML=rowsHtml(s.docs.map(d=>d.data()).reverse());
+  },e=>{
+    console.warn('thread query failed, using fallback:',e.code||e.message);
+    if(threadUnsub){threadUnsub();threadUnsub=null}
+    // 2) fallback: plain equality query (automatic single-field index, no composite index),
+    //    sorted in JavaScript. Also picks up old documents that have no `ts` field.
+    threadUnsub=col.where('room','==',key).onSnapshot(s=>{
+      const msgs=s.docs.map(d=>d.data()).sort((a,b)=>msOf(a)-msOf(b)).slice(-500);
+      $('cb').innerHTML=rowsHtml(msgs);
+      $('chatWarn').hidden=false;
+      $('chatWarn').textContent=(e.code==='failed-precondition'?'Index missing or still building – ':'Compatibility mode – ')+'messages loaded without the composite index. Deploy firestore.indexes.json (or click the index link in the browser console) to switch back to the fast query.';
+    },e2=>{$('cb').innerHTML='<tr><td colspan="3">Could not load: '+esc(e2.code||e2.message)+'</td></tr>'});
+  });
 }
+
+/* ---- delete a private chat thread (all messages of that pair) ---- */
+function askConfirm(title,body,okText){
+  return new Promise(res=>{
+    $('dmTitle').textContent=title;$('dmBody').textContent=body;$('dmOk').textContent=okText;$('dmOk').disabled=false;$('dmCancel').disabled=false;$('delModal').hidden=false;
+    const done=v=>{$('delModal').hidden=true;$('dmOk').onclick=$('dmCancel').onclick=null;res(v)};
+    $('dmOk').onclick=()=>done(true);$('dmCancel').onclick=()=>done(false);
+  });
+}
+async function collectPrivateRefs(key){
+  const ids=String(key).split('_'),col=db.collection('messages'),found=new Map(),qs=[];
+  const rooms=[key];if(ids.length===2)rooms.push(ids[1]+'_'+ids[0]);          // both uid orders
+  rooms.forEach(r=>qs.push(col.where('room','==',r).get()));                    // new + legacy (room == pair key)
+  qs.push(col.where('pairKey','==',key).get());                                 // new field
+  if(ids.length===2)qs.push(col.where('participants','array-contains',ids[0]).get().then(s=>({docs:s.docs.filter(d=>{const p=d.data().participants;return Array.isArray(p)&&p.includes(ids[0])&&p.includes(ids[1])})}))); // legacy safety net
+  const results=await Promise.all(qs);
+  results.forEach(s=>s.docs.forEach(d=>{if(d.data().isPrivate!==false)found.set(d.id,d.ref)}));  // never touch public messages
+  return [...found.values()];
+}
+async function deleteThread(key){
+  const label=pairLabelOf(key,($('chatTitle').textContent||key));
+  if(!await askConfirm('Delete chat history?',`This will permanently delete ALL messages in "${label}" from Firestore. Both users will lose this conversation. This cannot be undone. (Archived view-once photos are kept.)`,'Yes, delete permanently'))return;
+  const btn=$('delThread');btn.disabled=true;const old=btn.textContent;btn.textContent='Deleting…';
+  try{
+    const refs=await collectPrivateRefs(key);
+    for(let i=0;i<refs.length;i+=400){const b=db.batch();refs.slice(i,i+400).forEach(r=>b.delete(r));await b.commit();btn.textContent='Deleting… '+Math.min(i+400,refs.length)+'/'+refs.length}
+    chatRecent=chatRecent.filter(m=>!(isPrivMsg(m)&&keyOf(m)===key));   // remove from list immediately
+    chatSel=null;openThread(null);renderChatList();
+    alert('Deleted '+refs.length+' message'+(refs.length===1?'':'s')+' from "'+label+'".');
+  }catch(e){alert('Delete failed: '+(e.code||e.message))}
+  finally{btn.disabled=false;btn.textContent=old}
+}
+$('delThread').onclick=()=>{if(chatMode==='private'&&chatSel)deleteThread(chatSel)};
