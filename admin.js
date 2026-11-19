@@ -15,7 +15,7 @@ document.querySelectorAll('[data-vip]').forEach(b=>b.onclick=async()=>{const id=
 $('q').oninput=render;
 function renderSites(s){$('siteRows').innerHTML=s.docs.map(d=>`<tr><td>${esc(d.data().name)}</td><td><a href="${esc(d.data().url)}" target="_blank" rel="noopener">${esc(d.data().url)}</a></td><td><button data-del="${d.id}">Delete</button></td></tr>`).join('');document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>db.collection('freeSites').doc(b.dataset.del).delete())}
 $('addSite').onclick=async()=>{const name=$('siteName').value.trim(),url=$('siteUrl').value.trim();try{const u=new URL(url);if(!name||!['http:','https:'].includes(u.protocol))throw Error('Enter a name and valid http/https URL.');await db.collection('freeSites').add({name,url:u.href,createdAt:firebase.firestore.FieldValue.serverTimestamp()});$('siteName').value=$('siteUrl').value=''}catch(e){alert(e.message)}};
-function init(){initExtra();db.collection('users').onSnapshot(s=>{users={};s.forEach(d=>users[d.id]=d.data());render()});db.collection('userPrivate').onSnapshot(s=>{emails={};s.forEach(d=>emails[d.id]=d.data().email);render()},e=>console.warn('userPrivate:',e.code||e.message));db.collection('messages').orderBy('ts','desc').limit(300).onSnapshot(s=>{$('cb').innerHTML=s.docs.map(d=>{const m=d.data();return`<tr><td>${m.ts?m.ts.toDate().toLocaleString():''}</td><td>${esc(m.to?'Private chat':m.room)}</td><td>${esc(m.name)}</td><td>${esc(m.text)}${m.img?`<img class="chat" src="${esc(safeImg(m.img))}">`:''}</td></tr>`}).join('')});
+function init(){initExtra();db.collection('users').onSnapshot(s=>{users={};s.forEach(d=>users[d.id]=d.data());render()});db.collection('userPrivate').onSnapshot(s=>{emails={};s.forEach(d=>emails[d.id]=d.data().email);render()},e=>console.warn('userPrivate:',e.code||e.message));initChats();
  db.collection('messages').where('img','!=','').orderBy('img').limit(150).onSnapshot(ms=>{window.hfChats=ms.docs.map(d=>({id:d.id,type:'Chat image',name:d.data().name||'Member',caption:d.data().text||'',img:d.data().img,ts:d.data().ts}));renderMedia()});
  db.collection('stories').orderBy('ts','desc').limit(150).onSnapshot(ss=>{window.hfStories=ss.docs.map(d=>({id:d.id,type:'Story',name:d.data().name||'Member',caption:d.data().text||'',img:d.data().img,ts:d.data().ts}));renderMedia()});db.collection('freeSites').orderBy('createdAt','desc').onSnapshot(renderSites);db.collection('siteSettings').doc('socialLinks').onSnapshot(renderSocial)}
 
@@ -59,3 +59,52 @@ async function approvePay(id){
   try{await b.commit()}catch(e){alert('Failed: '+(e.code||e.message))}
 }
 document.addEventListener('click',e=>{if(e.target.matches&&e.target.matches('.media-card img'))e.target.classList.toggle('zoom')});
+
+
+/* ===== v5: separated chat history (Public rooms vs Private pairs) ===== */
+const PUBLIC_DEFAULTS=[{id:'public',name:'Public chat'},{id:'lounge',name:'Friends Lounge'},{id:'music',name:'Music & Movies'},{id:'night',name:'Night Owls'}];
+let chatMode='public',chatSel=null,chatRecent=[],customRoomsA=[],threadUnsub=null,seenName={};
+const isPrivMsg=m=>!!(m.isPrivate||m.to);
+const keyOf=m=>isPrivMsg(m)?(m.pairKey||m.room||''):(m.roomId||m.room||'');
+const nameOf=(uid,fb)=>(users[uid]&&users[uid].name)||seenName[uid]||fb||'Member';
+function pairLabelOf(key,fb){const ids=String(key).split('_');if(ids.length!==2)return fb||('Chat '+key);return nameOf(ids[0])+' & '+nameOf(ids[1])+"'s Chat"}
+function roomNameOf(id,fb){const r=[...PUBLIC_DEFAULTS,...customRoomsA].find(x=>x.id===id);return r?r.name:(fb||id)}
+function initChats(){
+  db.collection('rooms').onSnapshot(s=>{customRoomsA=s.docs.map(d=>({id:d.id,name:d.data().name||'Room'}));renderChatList()},e=>console.warn('rooms:',e.code||e.message));
+  db.collection('messages').orderBy('ts','desc').limit(1500).onSnapshot(s=>{
+    chatRecent=s.docs.map(d=>d.data());seenName={};
+    chatRecent.forEach(m=>{if(m.from&&m.name)seenName[m.from]=m.name;if(m.to&&m.toName)seenName[m.to]=seenName[m.to]||m.toName});
+    renderChatList()},e=>console.warn('messages:',e.code||e.message));
+  document.querySelectorAll('[data-ct]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-ct]').forEach(x=>x.classList.remove('on'));b.classList.add('on');chatMode=b.dataset.ct;chatSel=null;openThread(null);renderChatList()});
+  $('chatQ').oninput=renderChatList;
+}
+function buildThreads(){
+  const map=new Map();
+  if(chatMode==='public')[...PUBLIC_DEFAULTS,...customRoomsA].forEach(r=>map.set(r.id,{key:r.id,label:'# '+r.name,count:0,last:0,preview:''}));
+  chatRecent.forEach(m=>{
+    if(isPrivMsg(m)!==(chatMode==='private'))return;
+    const k=keyOf(m);if(!k)return;
+    let t=map.get(k);
+    if(!t){t={key:k,label:chatMode==='private'?pairLabelOf(k,m.pairLabel):'# '+roomNameOf(k,m.roomName),count:0,last:0,preview:''};map.set(k,t)}
+    t.count++;const ms=m.ts&&m.ts.toMillis?m.ts.toMillis():(m.createdAt||0);
+    if(ms>=t.last){t.last=ms;t.preview=(m.name||'')+': '+(m.text||(m.img?'📷 photo':''))}
+  });
+  if(chatMode==='private')map.forEach(t=>{t.label=pairLabelOf(t.key,t.label)});
+  const q=$('chatQ').value.trim().toLowerCase();
+  return [...map.values()].filter(t=>!q||t.label.toLowerCase().includes(q)).sort((a,b)=>b.last-a.last||a.label.localeCompare(b.label));
+}
+function renderChatList(){
+  const list=buildThreads();
+  $('chatList').innerHTML=list.length?list.map(t=>`<div class="thread ${t.key===chatSel?'on':''}" data-k="${esc(t.key)}"><b>${esc(t.label)}</b><small>${t.count} recent msg${t.count===1?'':'s'}${t.last?' · '+new Date(t.last).toLocaleString():''}</small><small>${esc((t.preview||'').slice(0,60))}</small></div>`).join(''):'<p class="note">No chats yet.</p>';
+  $('chatList').querySelectorAll('[data-k]').forEach(el=>el.onclick=()=>{chatSel=el.dataset.k;openThread(chatSel);renderChatList()});
+}
+function openThread(key){
+  if(threadUnsub){threadUnsub();threadUnsub=null}
+  if(!key){$('chatTitle').textContent='Select a chat';$('chatSub').textContent='';$('cb').innerHTML='';return}
+  const t=buildThreads().find(x=>x.key===key);
+  $('chatTitle').textContent=t?t.label:key;
+  $('chatSub').textContent=chatMode==='private'?'Private 1-on-1 thread (latest 500 messages)':'Public room (latest 500 messages)';
+  threadUnsub=db.collection('messages').where('room','==',key).orderBy('ts','desc').limit(500).onSnapshot(s=>{
+    $('cb').innerHTML=s.docs.map(d=>d.data()).reverse().map(m=>`<tr><td>${m.ts?m.ts.toDate().toLocaleString():''}</td><td>${esc(m.name)}</td><td>${esc(m.text)}${m.img?`<img class="chat" src="${esc(safeImg(m.img))}">`:''}</td></tr>`).join('')||'<tr><td colspan="3" class="note">No messages in this chat yet.</td></tr>';
+  },e=>{$('cb').innerHTML='<tr><td colspan="3">Could not load: '+esc(e.code||e.message)+'</td></tr>'});
+}
